@@ -1,0 +1,11 @@
+book_filename: "fishdown"
+language:
+  ui:
+    chapter_name: "Chapter "
+rmd_files: ["index.Rmd",
+            "catch_by_station.Rmd",
+            "on_stratas.Rmd",
+            "length_indices.Rmd",
+            "age_indices.Rmd",
+            "catch.Rmd",
+            "epilogue.Rmd"]

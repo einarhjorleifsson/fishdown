@@ -1,0 +1,49 @@
+--- 
+title: "Working with fishy data"
+author: "Einar Hjörleifsson"
+date: "`r Sys.Date()`"
+site: bookdown::bookdown_site
+output: bookdown::gitbook
+documentclass: book
+bibliography: [book.bib, packages.bib]
+biblio-style: apalike
+link-citations: yes
+github-repo: einarhjorleifsson/paxdown
+description: "A trial"
+---
+
+# Preamble
+
+... pax: population analysis in unix. This is a resuscitation of an old name - but likely going to do more.
+
+Have you wished for a painless way to generate survey indices. Give the following a try.
+
+# Needed packages
+
+
+```{r, eval = FALSE}
+devtools::install_github("fishvice/husky", dependencies = FALSE) # A temporary measure
+devtools::install_github("fishvice/pax", dependencies = FALSE)
+```
+
+In addition it is assumed you have the __fjolst__-package.
+
+# Some thoughts on function flows
+
+Length based:
+
+* By station:
+    - Calculate for a complete length range
+    - Raise by counted
+    - Convert to biomass via lwcoefficient
+    - Standardize by tow / trim tow
+    - Standardize by area swept
+
+```    
+mytable <- function(x, ...) x %>% group_by_(...) %>% summarise(n = n())
+mytable(mtcars, c("cyl"))
+mytable(mtcars, ~cyl)
+mytable(mtcars, c("gear"))
+mytable(mtcars, "cyl", "gear")
+mytable(mtcars, ~cyl, ~gear)
+```
