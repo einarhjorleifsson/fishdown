@@ -1,25 +1,216 @@
 # Catch by station
 
+## Preamble
 
-## Loading needed libraries
-___
+Thinking aloud - the process (survey or catch at age):
 
-```{r}
+* Select stations
+    - E.g. smb, smh, cod catch at age, ...
+* Gather data
+    - Length data
+    - Age data
+* Calculate
+    - E.g. for length data, catch by length class taking into account, if needed raising by counted, by ...
+* Standardize
+    - E.g. by towlength
+* Summarise
+    - By stations, by strata, by aggregates, by the whole
+
+Potential flow of function calls:
+```
+d <-
+  Stations %>% 
+  gather_***_data(Species = c(1, 2)) %>% 
+  calculate_***() %>% 
+  standardise_by_*towlength***() %>% 
+  summarise_by_***() %>% 
+```
+But could also think the whole in terms of "catchability", a la Jeppe Kolding.
+
+## Catch by stations
+
+```{r, message = FALSE}
 library(tidyverse)
-library(fjolst)    # for the time being
-library(pax)
+library(dplyrOracle)
+library(mar)
+db <- src_oracle("mar")
 ```
 
 
-The stations
+```{r, eval = FALSE}
+Lengths <- 
+  lesa_lengdir(db) %>% 
+  group_by(synis_id, tegund, lengd) %>% 
+  summarise(fjoldi = sum(fjoldi)) %>% 
+  ungroup()
+
+Counts <-
+  lesa_numer(db) %>% 
+  mutate(r =  ifelse(fj_maelt != 0, 1 + fj_talid/fj_maelt, 1)) %>% 
+  select(synis_id, tegund, fj_maelt, r)
+
+d <-
+  lesa_stodvar(db) %>% 
+  filter(veidarfaeri %in% 73,
+         tognumer %in% 1:39) %>% 
+  select(synis_id, ar, toglengd) %>% 
+  arrange(synis_id) %>% 
+  left_join(Lengths) %>% 
+  left_join(Counts) %>% 
+  mutate(r = ifelse(is.na(r), 1, r),
+         b  = fjoldi * 0.01 * lengd^3/1e3,
+         N  = r * ifelse(is.na(fjoldi), 0, fjoldi),
+         B  = r * ifelse(is.na(fjoldi), 0, fjoldi) * 0.01 * lengd^3/1e3) %>% 
+  group_by(synis_id, ar, tegund) %>% 
+  summarise(r = max(r),
+            fj_maelt = max(fj_maelt),
+            n = sum(fjoldi),
+            N = sum(N),
+            b  = sum(b),
+            B = sum(B)) %>% 
+  ungroup() %>% 
+  collect(n = Inf)
+
+# generate a grid of stations and species
+st <- 
+  lesa_stodvar(db) %>% 
+  filter(veidarfaeri %in% 73,
+         tognumer %in% 1:39) %>% 
+  select(synis_id) %>% 
+  collect(n = Inf)
+d3 <- 
+  expand.grid(synis_id = st$synis_id, tegund = unique(d$tegund)) %>% 
+  tbl_df() %>% 
+  left_join(d) %>% 
+  mutate(n = ifelse(is.na(n), 0, n),
+         N = ifelse(is.na(N), 0, N),
+         b = ifelse(is.na(b), 0, b),
+         B = ifelse(is.na(B), 0, B))
+```
+
+```{r, eval = FALSE}
+attach("/net/hafkaldi/export/u2/reikn/Splus5/SMB/UTBREIDSLA/.RData")
+utbrteg1 <-
+  utbrteg %>% 
+  mutate(N2 = as.numeric(torskur.stk),
+         B2 = as.numeric(torskur.kg)) %>% 
+  select(synis_id = synis.id, toglengd, N2, B2) %>% 
+  tbl_df()
+detach("file:/net/hafkaldi/export/u2/reikn/Splus5/SMB/UTBREIDSLA/.RData")
+utbrteg1 %>% 
+  left_join(d3 %>% filter(tegund == 1)) %>% 
+  filter(!near(B2, B)) %>% 
+  select(synis_id, ar, toglengd, r, N2, fj_maelt, n, N, B2, B) %>% 
+  glimpse()
+```
+
+```{r, eval = FALSE}
+id <- 63084
+lesa_lengdir(db) %>% 
+  filter(synis_id == id, tegund == 1) %>% 
+  mutate(b = fjoldi * 0.01 * lengd^3) %>% 
+  summarise(n = sum(fjoldi),
+            b = sum(b)/1e3)
+lesa.numer(id, 1)
+lesa.lengdir(id, 1, oracle = FALSE) %>% 
+  mutate(b = fjoldi * 0.01 * lengd^3) %>% 
+  summarise(n = sum(fjoldi),
+            b = sum(b)/1e3)
+lesa.lengdir(id, 1, oracle = TRUE) %>% 
+  mutate(b = fjoldi * 0.01 * lengd^3) %>% 
+  summarise(n = sum(fjoldi),
+            b = sum(b)/1e3)  
+```
+
+## Some functions
 
 ```{r}
-Station <- 
-  husky::STODVAR %>% 
-  bind_rows() %>% 
-  filter(tognumer %in% 1:39) %>% 
-  select(id = synis.id, year = ar, towlength = toglengd, strata = newstrata) %>% 
-  mutate(towlength = pax:::trim_towlength(towlength),
-         mult = 1) %>% 
-  arrange(id)
+gather_length_data <- function(Stations, Species) {
+  
+  # Here could create an switch, if Stations is connection do below
+  #   else read from fjolst
+  Lengths <- 
+    lesa_lengdir(Stations$src) %>% 
+    filter(tegund %in% Species) %>% 
+    group_by(synis_id, tegund, lengd) %>% 
+    summarise(fjoldi = sum(fjoldi)) %>% 
+    ungroup()
+  
+  Counts <-
+    lesa_numer(Stations$src) %>% 
+    filter(tegund %in% Species) %>% 
+    mutate(r =  ifelse(fj_maelt != 0, 1 + fj_talid/fj_maelt, 1)) %>% 
+    select(synis_id, tegund, fj_maelt, fj_talid, r)
+  
+  Stations %>% 
+    select(synis_id, ar, toglengd) %>% 
+    left_join(Lengths, by = "synis_id") %>% 
+    left_join(Counts, by = c("synis_id", "tegund"))
+  
+}
+
+catch_by_station <- function(Stations, Species, lwcoeff) {
+  
+  # NOTE: The function not standardized to towlength
+  
+  # TODO: Include the species specific lwcoefficient
+  #       Possibly allow binning by length class first, as done in pax::make_ldist_by_station
+  
+  d <- 
+    gather_length_data(Stations, Species) %>% 
+    # Below statistic is by length class
+    # If include lwcoeff then do a priori a left_join
+    mutate(r = ifelse(is.na(r), 1, r),
+           b  = fjoldi * 0.01 * lengd^3/1e3,
+           N  = r * ifelse(is.na(fjoldi), 0, fjoldi),
+           B  = r * ifelse(is.na(fjoldi), 0, fjoldi) * 0.01 * lengd^3/1e3) %>% 
+    # NOTE: Here could first do the calculation by length, including cumsums
+    #       Just need to arrange the data and the add grouping by length
+    #       The objective: Generic, but minimum coding
+    group_by(synis_id, ar, tegund) %>% 
+    summarise(toglengd = max(toglengd),
+              r = max(r),
+              fj_talid = max(fj_talid),
+              # next two columns should be the same, kept here for debugging
+              fj_maelt = max(fj_maelt),   # as recorded in fiskar.numer
+              n = sum(fjoldi),            # as calculated in fiskar.lengdir
+              N = sum(N),                 # raised numbers
+              # next column not needed
+              b  = sum(b),                # measured biomass
+              B = sum(B)) %>%             # raised biomass
+    ungroup() %>% 
+    collect(n = Inf)
+  
+  # Include stations with zero catch
+  st <- 
+    Stations %>% 
+    select(synis_id) %>% 
+    collect(n = Inf)
+  
+  expand.grid(synis_id = st$synis_id, tegund = Species) %>% 
+    tbl_df() %>% 
+    left_join(d, by = c("synis_id", "tegund")) %>% 
+    mutate(n = ifelse(is.na(n), 0, n),
+           N = ifelse(is.na(N), 0, N),
+           b = ifelse(is.na(b), 0, b),
+           B = ifelse(is.na(B), 0, B))
+  
+}
+
+Stations <-
+  lesa_stodvar(src_oracle("mar")) %>% 
+  filter(veidarfaeri %in% 73,
+         tognumer %in% 1:39)
+
+d <- 
+  Stations %>% 
+  catch_by_station(Species = c(1,2))
 ```
+
+```{r}
+rm(catch_by_station)
+```
+
+
+
+

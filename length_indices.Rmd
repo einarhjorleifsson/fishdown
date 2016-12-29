@@ -27,7 +27,7 @@ Station <-
   bind_rows() %>% 
   filter(tognumer %in% 1:39) %>% 
   select(id = synis.id, year = ar, towlength = toglengd, strata = newstrata) %>% 
-  mutate(towlength = pax:::trim_towlength(towlength),
+  mutate(towlength = trim_towlength(towlength),
          mult = 1) %>% 
   arrange(id)
 ```
@@ -44,7 +44,7 @@ And then we leave the rest to the `smx:calc_length_indices`-function:
 
 #### Cod spring survey index
 
-```{r cod_smb_length, cache=TRUE}
+```{r cod_smb_length, cache = TRUE}
 res <- calc_length_indices(Station, Stratas, SPECIES = 1)
 ```
 
@@ -76,6 +76,7 @@ mri <-
          type == "all") %>% 
   select(year = ar, cb = bio.staerri, cb.cv = cv.bio.staerri, type) %>% 
   mutate(source = "mri")
+detach("file:/net/hafkaldi/export/u2/reikn/Splus5/SMB/Allindices.RData")
 
 p +
   geom_pointrange(data = mri, 
