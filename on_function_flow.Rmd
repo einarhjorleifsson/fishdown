@@ -1,0 +1,19 @@
+# Some thoughts on function flows
+
+Length based:
+
+* By station:
+    - Calculate for a complete length range
+    - Raise by counted
+    - Convert to biomass via lwcoefficient
+    - Standardize by tow / trim tow
+    - Standardize by area swept
+
+```    
+mytable <- function(x, ...) x %>% group_by_(...) %>% summarise(n = n())
+mytable(mtcars, c("cyl"))
+mytable(mtcars, ~cyl)
+mytable(mtcars, c("gear"))
+mytable(mtcars, "cyl", "gear")
+mytable(mtcars, ~cyl, ~gear)
+```

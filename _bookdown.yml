@@ -3,6 +3,7 @@ language:
   ui:
     chapter_name: "Chapter "
 rmd_files: ["index.Rmd",
+            "on_function_flow.Rmd",
             "catch_by_station.Rmd",
             "on_stratas.Rmd",
             "length_indices.Rmd",

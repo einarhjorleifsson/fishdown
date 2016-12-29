@@ -27,6 +27,8 @@ d <-
 ```
 But could also think the whole in terms of "catchability", a la Jeppe Kolding.
 
+Some stuff below may be an overkill, given the task at hand - but here seeding for other operations.
+
 ## Catch by stations
 
 ```{r, message = FALSE}
@@ -35,16 +37,17 @@ library(dplyrOracle)
 library(mar)
 ```
 
-__Some biodata__:
+__Some biodata__ (not run):
 
-```{r, warning = FALSE}
+```{r, eval = FALSE}
 tmp <- bind_rows(husky::LWCOEFF)
-lwcoeff <-
-  data_frame(tegund = as.integer(names(tmp)),
-             a = as.numeric(tmp[1,]),
-             b = as.numeric(tmp[2,])) %>% 
-  filter(!is.na(tegund)) %>% 
-  arrange(tegund)
+LWCOEFF <-
+  data_frame(TEGUND = as.integer(names(tmp)),
+             A = as.numeric(tmp[1,]),
+             B = as.numeric(tmp[2,])) %>% 
+  filter(!is.na(TEGUND)) %>% 
+  arrange(TEGUND)
+copy_to(src_oracle("mar"), LWCOEFF, temporary = FALSE)
 ```
 
 
@@ -75,6 +78,37 @@ gather_length_data <- function(Stations, Species) {
   
 }
 
+calculate_biomass <- function(d) {
+  
+  lwcoeff <- 
+    dplyr::tbl(d$src, "LWCOEFF") %>% 
+    dplyr::rename_(.dots = stats::setNames(colnames(.), 
+        tolower(colnames(.))))
+    
+  d %>% 
+    left_join(lwcoeff, by = "tegund") %>% 
+    # if lwcoefficient for species not specified use newtons law
+    mutate(a = ifelse(is.na(a), 0.01, a),
+           b = ifelse(is.na(b), 3.00, b)) %>% 
+    # Below statistic is by length class
+    # If include lwcoeff then do a priori a left_join
+    mutate(r = ifelse(is.na(r), 1, r),
+           N  = r * ifelse(is.na(fjoldi), 0, fjoldi),
+           B  = r * ifelse(is.na(fjoldi), 0, fjoldi) * a * lengd^b/1e3)
+    
+  
+}
+
+cumulate_data <- function(d) {
+  
+  d %>% 
+    arrange(synis_id, tegund, lengd) %>% 
+    group_by(synis_id, tegund) %>% 
+    mutate(cN = cumsum(N),
+           cB = sum(B) - cumsum(B) + B) %>% 
+    ungroup()
+}
+
 catch_by_station <- function(Stations, Species, lwcoeff) {
   
   # NOTE: The function not standardized to towlength
@@ -84,20 +118,11 @@ catch_by_station <- function(Stations, Species, lwcoeff) {
   
   d <- 
     gather_length_data(Stations, Species) %>% 
-    # copy seems to slow stuff down a lot
-    left_join(lwcoeff, by = "tegund", copy = TRUE) %>% 
-    # if lwcoefficient for species not specified use newtons law
-    mutate(a = ifelse(is.na(a), 0.01, a),
-           b = ifelse(is.na(b), 3.00, b)) %>% 
-    # Below statistic is by length class
-    # If include lwcoeff then do a priori a left_join
-    mutate(r = ifelse(is.na(r), 1, r),
-           b  = fjoldi * a * lengd^b/1e3,
-           N  = r * ifelse(is.na(fjoldi), 0, fjoldi),
-           B  = r * ifelse(is.na(fjoldi), 0, fjoldi) * a * lengd^b/1e3) %>% 
-    # NOTE: Here could first do the calculation by length, including cumsums
-    #       Just need to arrange the data and the add grouping by length
-    #       The objective: Generic, but minimum coding
+    # ned a better name
+    calculate_biomass() %>% 
+    # next step is not neeed, but if used, the appropriate place is here
+    #  cumulate_data() %>% 
+    # would be nicer to have the collect() here 
     group_by(synis_id, ar, tegund) %>% 
     summarise(toglengd = max(toglengd),
               r = max(r),
@@ -106,11 +131,9 @@ catch_by_station <- function(Stations, Species, lwcoeff) {
               fj_maelt = max(fj_maelt),   # as recorded in fiskar.numer
               n = sum(fjoldi),            # as calculated in fiskar.lengdir
               N = sum(N),                 # raised numbers
-              # next column not needed
-              b  = sum(b),                # measured biomass
               B = sum(B)) %>%             # raised biomass
-    ungroup() %>% 
     collect(n = Inf)
+
   
   # Include stations with zero catch
   st <- 
@@ -118,14 +141,17 @@ catch_by_station <- function(Stations, Species, lwcoeff) {
     select(synis_id) %>% 
     collect(n = Inf)
   
-  expand.grid(synis_id = st$synis_id, tegund = Species) %>% 
+  # If too many species, this could be a memory problem:
+  # e.g. length(st$synis_id) * length(Species) * length(0:160) is 59 million rows!
+  #  the object d above (for cod and haddock) is only 0.9 million rows
+  expand.grid(synis_id = st$synis_id,
+              tegund = Species) %>% 
     tbl_df() %>% 
     left_join(d, by = c("synis_id", "tegund")) %>% 
-    mutate(n = ifelse(is.na(n), 0, n),
-           N = ifelse(is.na(N), 0, N),
-           b = ifelse(is.na(b), 0, b),
+    mutate(N = ifelse(is.na(N), 0, N),
            B = ifelse(is.na(B), 0, B))
   
+
 }
 ```
 
@@ -194,81 +220,6 @@ d %>%
          !near(B, B2)) %>% 
   select(synis_id, toglengd, fj_maelt, n, B, B2)
 ```
-
-
-__Not run__:
-```{r, eval = FALSE}
-Lengths <- 
-  lesa_lengdir(db) %>% 
-  group_by(synis_id, tegund, lengd) %>% 
-  summarise(fjoldi = sum(fjoldi)) %>% 
-  ungroup()
-
-Counts <-
-  lesa_numer(db) %>% 
-  mutate(r =  ifelse(fj_maelt != 0, 1 + fj_talid/fj_maelt, 1)) %>% 
-  select(synis_id, tegund, fj_maelt, r)
-
-d <-
-  lesa_stodvar(db) %>% 
-  filter(veidarfaeri %in% 73,
-         tognumer %in% 1:39) %>% 
-  select(synis_id, ar, toglengd) %>% 
-  arrange(synis_id) %>% 
-  left_join(Lengths) %>% 
-  left_join(Counts) %>% 
-  mutate(r = ifelse(is.na(r), 1, r),
-         b  = fjoldi * 0.01 * lengd^3/1e3,
-         N  = r * ifelse(is.na(fjoldi), 0, fjoldi),
-         B  = r * ifelse(is.na(fjoldi), 0, fjoldi) * 0.01 * lengd^3/1e3) %>% 
-  group_by(synis_id, ar, tegund) %>% 
-  summarise(r = max(r),
-            fj_maelt = max(fj_maelt),
-            n = sum(fjoldi),
-            N = sum(N),
-            b  = sum(b),
-            B = sum(B)) %>% 
-  ungroup() %>% 
-  collect(n = Inf)
-
-# generate a grid of stations and species
-st <- 
-  lesa_stodvar(db) %>% 
-  filter(veidarfaeri %in% 73,
-         tognumer %in% 1:39) %>% 
-  select(synis_id) %>% 
-  collect(n = Inf)
-d3 <- 
-  expand.grid(synis_id = st$synis_id, tegund = unique(d$tegund)) %>% 
-  tbl_df() %>% 
-  left_join(d) %>% 
-  mutate(n = ifelse(is.na(n), 0, n),
-         N = ifelse(is.na(N), 0, N),
-         b = ifelse(is.na(b), 0, b),
-         B = ifelse(is.na(B), 0, B))
-```
-
-
-
-```{r, eval = FALSE}
-id <- 63084
-lesa_lengdir(db) %>% 
-  filter(synis_id == id, tegund == 1) %>% 
-  mutate(b = fjoldi * 0.01 * lengd^3) %>% 
-  summarise(n = sum(fjoldi),
-            b = sum(b)/1e3)
-lesa.numer(id, 1)
-lesa.lengdir(id, 1, oracle = FALSE) %>% 
-  mutate(b = fjoldi * 0.01 * lengd^3) %>% 
-  summarise(n = sum(fjoldi),
-            b = sum(b)/1e3)
-lesa.lengdir(id, 1, oracle = TRUE) %>% 
-  mutate(b = fjoldi * 0.01 * lengd^3) %>% 
-  summarise(n = sum(fjoldi),
-            b = sum(b)/1e3)  
-```
-
-
 
 ```{r}
 rm(catch_by_station)

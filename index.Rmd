@@ -18,7 +18,7 @@ description: "A trial"
 
 Have you wished for a painless way to generate survey indices. Give the following a try.
 
-# Needed packages
+__Needed packages__:
 
 
 ```{r, eval = FALSE}
@@ -26,24 +26,4 @@ devtools::install_github("fishvice/husky", dependencies = FALSE) # A temporary m
 devtools::install_github("fishvice/pax", dependencies = FALSE)
 ```
 
-In addition it is assumed you have the __fjolst__-package.
-
-# Some thoughts on function flows
-
-Length based:
-
-* By station:
-    - Calculate for a complete length range
-    - Raise by counted
-    - Convert to biomass via lwcoefficient
-    - Standardize by tow / trim tow
-    - Standardize by area swept
-
-```    
-mytable <- function(x, ...) x %>% group_by_(...) %>% summarise(n = n())
-mytable(mtcars, c("cyl"))
-mytable(mtcars, ~cyl)
-mytable(mtcars, c("gear"))
-mytable(mtcars, "cyl", "gear")
-mytable(mtcars, ~cyl, ~gear)
-```
+In addition it is (still) assumed you have the __fjolst__-package.
