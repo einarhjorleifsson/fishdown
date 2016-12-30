@@ -28,7 +28,7 @@ library(dplyrOracle)
 library(mar)
 ```
 
-__More functions__:
+__Some functions__:
 ```{r}
 trim_towlength <- function(d, std.towlength = 4, min.towlength = 2, max.towlength = 8) {
   
@@ -44,13 +44,41 @@ standardise_towlength <- function(d, std.towlength = 4) {
   
 }
 
-scale_by_counted <- function(d) {
-  d %>% mutate(fjoldi = r * fjoldi)
+gather_length_data <- function(Stations, Species) {
+  
+  # Here could create an switch, if Stations is connection do below
+  #   else read from fjolst
+  Lengths <- 
+    lesa_lengdir(Stations$src) %>% 
+    filter(tegund %in% Species) %>% 
+    group_by(synis_id, tegund, lengd) %>% 
+    summarise(fjoldi = sum(fjoldi)) %>% 
+    ungroup()
+  
+  Counts <-
+    lesa_numer(Stations$src) %>% 
+    filter(tegund %in% Species) %>% 
+    mutate(r =  ifelse(fj_maelt != 0, 1 + fj_talid/fj_maelt, 1)) %>% 
+    select(synis_id, tegund, fj_maelt, fj_talid, r)
+  
+  Stations %>% 
+    left_join(Lengths, by = "synis_id") %>% 
+    left_join(Counts, by = c("synis_id", "tegund"))
+  
 }
+
+scale_by_counted <- function(d) {
+  d %>% 
+    mutate(fjoldi = r * fjoldi / 1e3) %>%   # units of thousan
+    select(-r)                              # no use anymore
+}
+
 standardise_towlength <- function(d, std.towlength = 4) {
   
-  d %>% mutate(N = fjoldi * std.towlength/toglengd)
-  
+  d %>% 
+    mutate(N = fjoldi * std.towlength/toglengd) %>%   # standardize to per 4 miles
+    select(-toglengd)
+
 }
 
 
@@ -60,7 +88,7 @@ calculate_biomass <- function(d) {
   
   d %>% 
     left_join(lwcoeff, by = "tegund") %>% 
-    # if lwcoefficient for species not specified use newtons law
+    # use Newton's law if lwcoefficient for species not specified
     mutate(a = ifelse(is.na(a), 0.01, a),
            b = ifelse(is.na(b), 3.00, b)) %>% 
     # Below statistic is by length class
@@ -105,8 +133,8 @@ Stations %>%
   #b_d  = ifelse(N == 1, b_m  * std.cv, stats::sd(b)),
   ungroup() %>%
   left_join(Stratas, by = "strata") %>%
-  mutate(area  = area/1.852^2 / std.area,
-         n     = n_m  * area,
+  mutate(area  = area/1.852^2 / std.area) %>% 
+  mutate(n     = n_m  * area,
          b     = b_m  * area) %>%
   # below equvialent to aggr-calculation
   group_by(ar) %>%
@@ -142,12 +170,9 @@ x %>%
   geom_point()
 
 d %>% 
-  mutate(source = "tidy",
-         b = b/1e3) %>% 
-  bind_rows(mri %>% mutate(b = b)) %>% 
-  ggplot() +
-  geom_point(aes(ar, b, colour = source)) +
-  facet_wrap(~ source, scale = "free_y")
-
-
+  mutate(source = "tidy") %>% 
+  bind_rows(mri) %>% 
+  ggplot(aes(ar, b, colour = source)) +
+  geom_point() +
+  geom_line()
 ```
