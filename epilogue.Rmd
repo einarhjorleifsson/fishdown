@@ -1,5 +1,5 @@
 # Some info
 
-```{r}
+```{r epilogue}
 devtools::session_info()
 ```

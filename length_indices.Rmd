@@ -8,7 +8,7 @@ knitr::opts_chunk$set(echo = TRUE,
 ## Loading needed libraries
 ___
 
-```{r}
+```{r length_indices}
 library(tidyverse)
 library(fjolst)    # for the time being
 library(pax)

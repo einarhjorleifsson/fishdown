@@ -1,0 +1,153 @@
+# Length based indices via mar
+
+```{r include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE)
+```
+
+
+__The flow__:
+```
+Stations %>%
+trim_towlength %>%              # narrow extremes
+add_stratas %>% 
+gather_length_data %>%
+standardize_towlength %>%       # on the number only
+calculate_biomass %>% 
+summarise_by_station %>% 
+summarise_by_strata %>% 
+summarise
+```
+
+
+__Loading needed libraries__:
+
+```{r length_indices_mar}
+library(tidyverse)
+library(dplyrOracle)
+library(mar)
+```
+
+__More functions__:
+```{r}
+trim_towlength <- function(d, std.towlength = 4, min.towlength = 2, max.towlength = 8) {
+  
+  d %>% 
+    # seems like one can not refer to same variable twice within one single mutate
+    mutate(toglengd = if_else(toglengd > max.towlength, max.towlength, toglengd)) %>% 
+    mutate(toglengd = if_else(toglengd < min.towlength, min.towlength, toglengd))
+}
+
+standardise_towlength <- function(d, std.towlength = 4) {
+  
+  d %>% mutate(N = N * std.towlength/toglengd)
+  
+}
+
+scale_by_counted <- function(d) {
+  d %>% mutate(fjoldi = r * fjoldi)
+}
+standardise_towlength <- function(d, std.towlength = 4) {
+  
+  d %>% mutate(N = fjoldi * std.towlength/toglengd)
+  
+}
+
+
+calculate_biomass <- function(d) {
+  
+  lwcoeff <- tbl_mar(db, "ops$einarhj.lwcoeff")
+  
+  d %>% 
+    left_join(lwcoeff, by = "tegund") %>% 
+    # if lwcoefficient for species not specified use newtons law
+    mutate(a = ifelse(is.na(a), 0.01, a),
+           b = ifelse(is.na(b), 3.00, b)) %>% 
+    # Below statistic is by length class
+    # If include lwcoeff then do a priori a left_join
+    mutate(B  = ifelse(is.na(N), 0, N) * a * lengd^b/1e3) %>% 
+    select(-a, -b)
+  
+  
+}
+```
+
+__Run the flow__:
+```{r}
+db <- src_oracle("mar")
+Stations <-  tbl_mar(db, "ops$einarhj.smb19852016")
+Stratas <- 
+  tbl_mar(db, "ops$einarhj.stratas") %>% 
+  select(strata, area = rall.area)
+
+std.cv <- 1
+std.area <- 4 * 17/1852
+Stations %>%
+  trim_towlength() %>% 
+  #left_join(Stratas) %>% 
+  gather_length_data(Species = 1) %>%
+  scale_by_counted() %>% 
+  standardise_towlength() %>% 
+  calculate_biomass() %>%
+  select(synis_id, ar, strata, tegund, lengd, N, B) %>%
+  # since not all length classes included can only do the total
+  group_by(synis_id, ar, strata, tegund) %>% 
+  summarise(N = sum(N),
+            B = sum(B)) %>% 
+  # Zero stations
+  mutate(N = ifelse(is.na(N), 0, N),
+         B = ifelse(is.na(B), 0, B)) %>% 
+  group_by(ar, strata) %>% 
+  dplyr::summarise(sN  = n(),   # Number of stations
+                   n_m  = mean(N),
+                   #n_d  = ifelse(sN == 1, n_m  * std.cv, stats::sd(n)),
+                   b_m  = mean(B)) %>% 
+  #b_d  = ifelse(N == 1, b_m  * std.cv, stats::sd(b)),
+  ungroup() %>%
+  left_join(Stratas, by = "strata") %>%
+  mutate(area  = area/1.852^2 / std.area,
+         n     = n_m  * area,
+         b     = b_m  * area) %>%
+  # below equvialent to aggr-calculation
+  group_by(ar) %>%
+  # A la Höski:
+  summarise(n = sum(n),
+            b = sum(b)) %>% 
+  collect(n = Inf) ->
+  d
+```
+
+```{r}
+attach("/net/hafkaldi/export/u2/reikn/Splus5/SMB/Allindices.RData")
+mri <- 
+  All.indices %>% 
+  filter(species == 1,
+         svaedi == "Heild",
+         lengd == 5,
+         type == "all") %>% 
+  select(ar, b = bio.staerri, type) %>% 
+  mutate(source = "mri")
+detach("file:/net/hafkaldi/export/u2/reikn/Splus5/SMB/Allindices.RData")
+# Looks like we have a scaling problem:
+x <- 
+  d %>% 
+  mutate(source = "tidy") %>% 
+  bind_rows(mri) %>%
+  select(ar, b, source) %>% 
+  spread(key = source, value = b) %>%
+  mutate(r = tidy/mri)
+x
+x %>% 
+  ggplot(aes(mri, tidy)) +
+  geom_point()
+
+d %>% 
+  mutate(source = "tidy",
+         b = b/1e3) %>% 
+  bind_rows(mri %>% mutate(b = b)) %>% 
+  ggplot() +
+  geom_point(aes(ar, b, colour = source)) +
+  facet_wrap(~ source, scale = "free_y")
+
+
+```

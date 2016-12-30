@@ -2,54 +2,23 @@
 
 ## Preamble
 
-Thinking aloud - the process (survey or catch at age):
-
-* Select stations
-    - E.g. smb, smh, cod catch at age, ...
-* Gather data
-    - Length data
-    - Age data
-* Calculate
-    - E.g. for length data, catch by length class taking into account, if needed raising by counted, by ...
-* Standardize
-    - E.g. by towlength
-* Summarise
-    - By stations, by strata, by aggregates, by the whole
-
-Potential flow of function calls:
+__The flow__:
 ```
-d <-
-  Stations %>% 
-  gather_***_data(Species = c(1, 2)) %>% 
-  calculate_***() %>% 
-  standardise_by_*towlength***() %>% 
-  summarise_by_***() %>% 
+Stations %>% 
+  gather_length_data %>% 
+  calculate_biomass %>% 
+  summarise_by_station
 ```
-But could also think the whole in terms of "catchability", a la Jeppe Kolding.
 
 Some stuff below may be an overkill, given the task at hand - but here seeding for other operations.
 
 ## Catch by stations
 
-```{r, message = FALSE}
+```{r catch_by_station, message = FALSE}
 library(tidyverse)
 library(dplyrOracle)
 library(mar)
 ```
-
-__Some biodata__ (not run):
-
-```{r, eval = FALSE}
-tmp <- bind_rows(husky::LWCOEFF)
-LWCOEFF <-
-  data_frame(TEGUND = as.integer(names(tmp)),
-             A = as.numeric(tmp[1,]),
-             B = as.numeric(tmp[2,])) %>% 
-  filter(!is.na(TEGUND)) %>% 
-  arrange(TEGUND)
-copy_to(src_oracle("mar"), LWCOEFF, temporary = FALSE)
-```
-
 
 __Some functions__:
 
@@ -72,7 +41,7 @@ gather_length_data <- function(Stations, Species) {
     select(synis_id, tegund, fj_maelt, fj_talid, r)
   
   Stations %>% 
-    select(synis_id, ar, toglengd) %>% 
+    #select(synis_id, ar, toglengd) %>% 
     left_join(Lengths, by = "synis_id") %>% 
     left_join(Counts, by = c("synis_id", "tegund"))
   
@@ -80,10 +49,7 @@ gather_length_data <- function(Stations, Species) {
 
 calculate_biomass <- function(d) {
   
-  lwcoeff <- 
-    dplyr::tbl(d$src, "LWCOEFF") %>% 
-    dplyr::rename_(.dots = stats::setNames(colnames(.), 
-        tolower(colnames(.))))
+  lwcoeff <- tbl_mar(d$src, "ops$einarhj.lwcoeff")
     
   d %>% 
     left_join(lwcoeff, by = "tegund") %>% 
@@ -150,7 +116,6 @@ catch_by_station <- function(Stations, Species, lwcoeff) {
     left_join(d, by = c("synis_id", "tegund")) %>% 
     mutate(N = ifelse(is.na(N), 0, N),
            B = ifelse(is.na(B), 0, B))
-  
 
 }
 ```
@@ -161,7 +126,8 @@ __Operationally__:
 Stations <-
   lesa_stodvar(src_oracle("mar")) %>% 
   filter(veidarfaeri %in% 73,
-         tognumer %in% 1:39)
+         tognumer %in% 1:39) %>% 
+  select(synis_id, ar, toglengd)
 
 d <- 
   Stations %>% 

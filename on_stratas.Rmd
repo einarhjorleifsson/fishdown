@@ -1,2 +1,6 @@
 # On stratas
 
+```{r on_stratas}
+
+```
+

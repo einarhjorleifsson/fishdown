@@ -3,7 +3,7 @@
 
 ## Loading needed libraries
 
-```{r}
+```{r age_indices}
 library(tidyverse)
 library(fjolst)    # for the time being
 library(pax)

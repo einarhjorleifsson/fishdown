@@ -1,5 +1,39 @@
 # Some thoughts on function flows
 
+
+__Load data to oracle__ (not run):
+```{r on_function_flow, eval = FALSE}
+library(tidyverse)
+library(dplyrOracle)
+library(mar)
+db <- src_oracle("mar")
+
+SMB19852016 <- 
+  husky::STODVAR %>% 
+  bind_rows() %>% 
+  filter(tognumer %in% 1:39) %>% 
+  select(synis_id = synis.id, ar, toglengd, strata = newstrata)
+copy_to(db, SMB19852016, temporary = FALSE)
+
+LWCOEFF <- bind_rows(husky::LWCOEFF)
+LWCOEFF <-
+  data_frame(tegund = as.integer(names(LWCOEFF)),
+             a = as.numeric(LWCOEFF[1,]),
+             b = as.numeric(LWCOEFF[2,])) %>% 
+  filter(!is.na(tegund)) %>% 
+  arrange(tegund)
+copy_to(src_oracle("mar"), LWCOEFF, temporary = FALSE)
+
+STRATAS <-
+  husky::stratas_df
+copy_to(src_oracle("mar"), STRATAS, temporary = FALSE)
+
+NEWSTRATAS <-
+  husky::newstratas_df
+copy_to(src_oracle("mar"), NEWSTRATAS, temporary = FALSE)
+```
+
+
 Length based:
 
 * By station:
@@ -9,11 +43,3 @@ Length based:
     - Standardize by tow / trim tow
     - Standardize by area swept
 
-```    
-mytable <- function(x, ...) x %>% group_by_(...) %>% summarise(n = n())
-mytable(mtcars, c("cyl"))
-mytable(mtcars, ~cyl)
-mytable(mtcars, c("gear"))
-mytable(mtcars, "cyl", "gear")
-mytable(mtcars, ~cyl, ~gear)
-```
