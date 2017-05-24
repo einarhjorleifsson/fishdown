@@ -19,6 +19,11 @@ summarise_by_strata %>%            # one record per strata
 summarise                          # one record per year
 ```
 
+__TO DO__:
+
+* Indices by length class
+* Indices when no length measurements, only counts. Possibly use full_join and then set length class to zero where length class not defined.
+* User defined grouping?
 
 __Loading needed libraries__:
 
@@ -44,13 +49,14 @@ standardise_towlength <- function(d, std.towlength = 4) {
   
 }
 
-gather_length_data <- function(Stations, Species) {
+gather_length_data <- function(Stations, Species, Length = 0) {
   
   # Here could create an switch, if Stations is connection do below
   #   else read from fjolst
   Lengths <- 
     lesa_lengdir(Stations$src) %>% 
-    filter(tegund %in% Species) %>% 
+    filter(tegund %in% Species,
+           lengd >= Length) %>% 
     group_by(synis_id, tegund, lengd) %>% 
     summarise(fjoldi = sum(fjoldi)) %>% 
     ungroup()
@@ -139,6 +145,7 @@ aggregate_by_year <- function(d) {
 
 __Run the flow__:
 ```{r}
+Length <- 5 # Index for fish length equal to or larger than
 db <- src_oracle("mar")
 Stations <-  tbl_mar(db, "ops$einarhj.smb19852016")
 
@@ -148,7 +155,7 @@ std.area <- 4 * 17/1852
 Stations %>%
   trim_towlength() %>% 
   #left_join(Stratas) %>% 
-  gather_length_data(Species = 1) %>%
+  gather_length_data(Species = 1, Length = Length) %>%
   scale_by_counted() %>% 
   standardise_towlength() %>% 
   calculate_biomass() %>%
@@ -184,7 +191,7 @@ mri <-
   All.indices %>% 
   filter(species == 1,
          svaedi == "Heild",
-         lengd == 5,
+         lengd == Length,
          type == "all") %>% 
   select(year = ar, cb = bio.staerri, cb.cv = cv.bio.staerri, type) %>% 
   mutate(source = "mri")
@@ -199,3 +206,222 @@ p +
        title = "Biomass indices",
        subtitle = "Comparison of the mar (red) and the Bible (grey)")
 ```
+
+__Digression - calculate only those stations "now" taken__:
+
+```{r}
+db <- src_oracle("mar")
+```
+
+```{r, eval = FALSE}
+# not run
+st <- 
+  tbl_mar(db, "ops$einarhj.smb19852016") %>% 
+  left_join(lesa_stodvar(db) %>% select(synis_id, reitur, tognumer,
+                                        lon = kastad_v_lengd,
+                                        lat = kastad_n_breidd)) %>% 
+  collect() %>% 
+  mutate(id = paste(reitur, tognumer))
+
+st17 <- 
+  lesa_stodvar(db) %>% 
+  filter(ar == 2017, synaflokkur == 30, veidarfaeri == 73) %>% 
+  select(synis_id, ar, reitur, toglengd,
+         lon = kastad_v_lengd,
+         lat = kastad_n_breidd,
+         tognumer) %>% 
+  collect() %>% 
+  mutate(id = paste(reitur, tognumer))
+
+# Note need to put strata id into the 2017 data
+st17 <-
+  st17 %>% 
+  left_join(st %>% 
+  filter(ar == 2016) %>% 
+  select(id, strata))
+
+STTAKEN4 <-
+  st %>% 
+  filter(st$id %in% st17$id) %>% 
+  bind_rows(st17) %>% 
+  filter(!is.na(strata))
+
+copy_to(db, STTAKEN4, temporary = FALSE)
+```
+
+```{r}
+calc_by_strata <- function(d) {
+  
+  # Stuff should not really be inside this function
+  Stratas <- 
+  tbl_mar(db, "ops$einarhj.stratas") %>% 
+  select(strata, area = rall.area)
+    
+  d %>% 
+    group_by(ar, strata, tegund) %>% 
+  dplyr::summarise(sN  = n(),   # Number of stations within strata
+                   n_m  = mean(N),
+                   n_d  = ifelse(n() == 1, mean(N) * std.cv, sd(N)),
+                   b_m  = mean(B),
+                   b_d  = ifelse(n() == 1, mean(B) * std.cv, sd(B))) %>% 
+  #b_d  = ifelse(N == 1, b_m  * std.cv, stats::sd(b)),
+  ungroup() %>%
+  left_join(Stratas, by = "strata") %>%
+  # within oracle, have to mutate in stages
+  mutate(area  = area/1.852^2 / std.area) %>% 
+  mutate(n     = n_m  * area,
+         b     = b_m  * area)
+  
+}
+
+calc_by_strata <- function(d) {
+  
+  # Stuff should not really be inside this function
+  Stratas <- 
+  tbl_mar(db, "ops$einarhj.stratas") %>% 
+  select(strata, area = rall.area)
+    
+  d %>% 
+    group_by(ar, strata, species) %>% 
+  dplyr::summarise(sN  = n(),   # Number of stations within strata
+                   n_m  = mean(N),
+                   n_d  = ifelse(n() == 1, mean(N) * std.cv, sd(N)),
+                   b_m  = mean(B),
+                   b_d  = ifelse(n() == 1, mean(B) * std.cv, sd(B))) %>% 
+  #b_d  = ifelse(N == 1, b_m  * std.cv, stats::sd(b)),
+  ungroup() %>%
+  left_join(Stratas, by = "strata") %>%
+  # within oracle, have to mutate in stages
+  mutate(area  = area/1.852^2 / std.area) %>% 
+  mutate(n     = n_m  * area,
+         b     = b_m  * area)
+  
+}
+
+aggregate_by_year <- function(d) {
+  
+  # below equvialent to aggr-calculation
+  d %>% 
+    group_by(ar, species) %>%
+    # A la Höski:
+    summarise(n = sum(n),
+              n.cv = pax:::calc_cv(n_m, n_d, area, sN),
+              b = sum(b),
+              b.cv = pax:::calc_cv(b_m, b_d, area, sN)) %>% 
+    ungroup()
+  
+}
+
+Length <- 5 # Index for fish length equal to or larger than
+db <- src_oracle("mar")
+Stations <-  tbl_mar(db, "ops$einarhj.STTAKEN4")
+
+teg <- lesa_tegundir(db) %>% 
+  collect(n = Inf) %>% 
+  arrange(tegund)
+
+teg2 <-
+  teg %>%
+  filter(tegund %in% c(998, 53, 72, 4))
+
+std.cv <- 1
+std.area <- 4 * 17/1852
+Stations %>%
+  trim_towlength() %>% 
+  #left_join(Stratas) %>% 
+  gather_length_data(Species = teg2$tegund, Length = Length) %>%
+  scale_by_counted() %>% 
+  standardise_towlength() %>% 
+  calculate_biomass() %>%
+  # since not all length classes included can only do the total
+  # for the time being to a "verb"
+  group_by(synis_id, ar, strata, tegund) %>% 
+  summarise(N = sum(N),
+            B = sum(B)) %>% 
+  # Zero stations
+  mutate(N = ifelse(is.na(N), 0, N),
+         B = ifelse(is.na(B), 0, B)) %>% 
+  rename(species = tegund) %>% 
+  calc_by_strata() %>% 
+  # Have to collect here because of calc_cv function in the aggregate step
+  collect(n = Inf) %>% 
+  aggregate_by_year() ->
+  d
+d %>% 
+  filter(!is.na(species)) %>% 
+  mutate(n = n/1e3) %>% 
+  select(year = ar, y = n, cv = n.cv, species) %>% 
+  ggplot(aes(year, y)) +
+  geom_pointrange(aes(ymin = y * (1 - cv),
+                      ymax = y * (1 + cv)),
+                  colour = "red", lwd = 1) +
+  geom_line(colour = "red", lwd = 1) +
+  scale_colour_brewer(palette = "Set1") +
+  facet_wrap(~ species, scale = "free_y") +
+  labs(x = NULL, y = NULL)
+```
+
+```{r}
+db <- src_oracle("mar")
+st <- 
+  lesa_stodvar(db) %>% 
+  filter(ar == 2017, synaflokkur == 30, veidarfaeri == 73) %>% 
+  select(skip,
+         synis_id, ar, reitur, toglengd,
+         lon = kastad_v_lengd,
+         lat = kastad_n_breidd,
+         tognumer)
+nu <-
+  st %>% 
+  select(synis_id) %>% 
+  left_join(lesa_numer(db)) %>% 
+  collect(n = Inf)
+le <- 
+  st %>% 
+  select(synis_id) %>% 
+  left_join(lesa_lengdir(db)) %>% 
+  collect(n = Inf)
+st <-
+  st %>% 
+  collect(n = Inf)
+nu <-
+  nu %>% 
+  mutate(r = (fj_talid + fj_maelt)/ifelse(fj_maelt == 0, 1, fj_maelt))
+
+bio <-
+  le %>% 
+  left_join(nu %>% select(synis_id, tegund, r)) %>% 
+  mutate(fjoldi = r  * fjoldi,
+         bio = fjoldi * 0.01 * lengd^3) %>% 
+  group_by(synis_id) %>% 
+  summarise(bio = sum(bio, na.rm = TRUE)/1e3)
+n.tegundir <-
+  nu %>% 
+  group_by(synis_id) %>% 
+  summarise(n.tegundir = n_distinct(tegund))
+nu2 <-
+  nu %>% 
+  select(synis_id, fj_maelt, fj_talid, fj_maelt, fj_magasyna) %>% 
+  gather(key = key, value = n, -synis_id) %>% 
+  group_by(synis_id, key) %>% 
+  summarise(n = sum(n)) %>% 
+  spread(key, n)
+st %>% 
+  left_join(bio) %>% 
+  left_join(nu2) %>%
+  left_join(n.tegundir) %>% 
+  group_by(skip) %>% 
+  summarise(n.stodvar = n(),
+            n.tegundir = mean(n.tegundir),
+            bio.min = min(bio),
+            bio.max = max(bio),
+            bio.mean = mean(bio),
+            bio.median = median(bio),
+            fj_maelt = median(fj_maelt),
+            fj_talid = median(fj_talid),
+            fj_magasyna = median(fj_magasyna)) %>% 
+  gather(key = key, value = value, -skip) %>% 
+  spread(key = skip, value = value)
+
+```
+
