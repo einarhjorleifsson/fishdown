@@ -2,6 +2,7 @@
 
 ## Preamble
 
+
 __The flow__:
 ```
 Stations %>% 
@@ -135,6 +136,8 @@ d <-
 ```
 
 __Some testing__:
+
+Below some comparison with the "official" catch per station. The difference is due to difference in the treatment of measured fish in cases where the number of fish measured in the length table is not the same as the number of fish measured in the number table.
 
 ```{r}
 attach("/net/hafkaldi/export/u2/reikn/Splus5/SMB/UTBREIDSLA/.RData")

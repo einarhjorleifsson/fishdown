@@ -18,7 +18,6 @@ description: "A trial"
 
 Have you wished for a painless way to generate survey indices. Give the following a try.
 
-test
 
 __Needed packages__:
 
