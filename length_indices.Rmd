@@ -45,7 +45,7 @@ And then we leave the rest to the `smx:calc_length_indices`-function:
 #### Cod spring survey index
 
 ```{r cod_smb_length, cache = TRUE}
-res <- calc_length_indices(Station, Stratas, SPECIES = 1)
+res <- pax::calc_length_indices(Station, Stratas, SPECIES = 1)
 ```
 
 Extracting the tidy information and preparing the plot:
@@ -104,7 +104,7 @@ So the tidyverse is 0.2% higher than the mri - some may want to dig into that.
 
 Here lets try to calculate the index for Grásleppa. We use the same station set and strata as above. Hence only need to do specify in addition the sex:
 ```{r grasleppa_smb_length, cache=TRUE}
-res <- calc_length_indices(Station, Stratas, SPECIES = 48, Sex = 2)
+res <- pax::calc_length_indices(Station, Stratas, SPECIES = 48, Sex = 2)
 # and a quick plot
 res$aggr %>% 
   filter(length == 5) %>% 
@@ -123,10 +123,10 @@ res$aggr %>%
 #### "non-standard" species spring survey index
 
 ```{r misc_smb_length, cache=TRUE}
-spe88 <-  calc_length_indices(Station, Stratas,  88, lwcoeff = c(0.01, 3))
-spe562 <- calc_length_indices(Station, Stratas, 562, lwcoeff = c(0.01, 3))
-spe150 <- calc_length_indices(Station, Stratas, 150, lwcoeff = c(0.01, 3))
-spe71 <-  calc_length_indices(Station, Stratas,  71, lwcoeff = c(0.01, 3))
+spe88 <-  pax::calc_length_indices(Station, Stratas,  88, lwcoeff = c(0.01, 3))
+spe562 <- pax::calc_length_indices(Station, Stratas, 562, lwcoeff = c(0.01, 3))
+spe150 <- pax::calc_length_indices(Station, Stratas, 150, lwcoeff = c(0.01, 3))
+spe71 <-  pax::calc_length_indices(Station, Stratas,  71, lwcoeff = c(0.01, 3))
 spe88$aggr %>% 
   mutate(Species = "Rauða sævesla") %>% 
   bind_rows(spe562$aggr %>% mutate(Species = "Ljóskjafta")) %>% 
@@ -154,7 +154,7 @@ NOTE: There is a bug when it comes to the biomass estimates of the two last spec
 
 ```{r cod_smh_length, cache=TRUE}
 Stations <- 
-  smh_strata_setup() %>% 
+  pax::smh_strata_setup() %>% 
   select(id = synis.id, year = ar, towlength = toglengd, strata = newstrata) %>% 
   mutate(towlength = pax:::trim_towlength(towlength),
          mult = 1) %>% 
@@ -162,7 +162,7 @@ Stations <-
 Stratas <-
   husky::newstratas_df %>% 
   select(strata, area = rall.area)
-res <- calc_length_indices(Stations, Stratas, SPECIES = 1)
+res <- pax::calc_length_indices(Stations, Stratas, SPECIES = 1)
 res$aggr %>% 
   filter(length == 5) %>% 
   select(year, cb, cb.cv) %>% 

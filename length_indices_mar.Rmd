@@ -29,7 +29,6 @@ __Loading needed libraries__:
 
 ```{r length_indices_mar}
 library(tidyverse)
-library(dplyrOracle)
 library(mar)
 ```
 
@@ -90,7 +89,7 @@ standardise_towlength <- function(d, std.towlength = 4) {
 
 calculate_biomass <- function(d) {
   
-  lwcoeff <- tbl_mar(db, "ops$einarhj.lwcoeff")
+  lwcoeff <- tbl_mar(con, "ops$einarhj.lwcoeff")
   
   d %>% 
     left_join(lwcoeff, by = "tegund") %>% 
@@ -108,7 +107,7 @@ calc_by_strata <- function(d) {
   
   # Stuff should not really be inside this function
   Stratas <- 
-  tbl_mar(db, "ops$einarhj.stratas") %>% 
+  tbl_mar(con, "ops$einarhj.stratas") %>% 
   select(strata, area = rall.area)
     
   d %>% 
@@ -146,8 +145,15 @@ aggregate_by_year <- function(d) {
 __Run the flow__:
 ```{r}
 Length <- 5 # Index for fish length equal to or larger than
-db <- src_oracle("mar")
-Stations <-  tbl_mar(db, "ops$einarhj.smb19852016")
+con <- connect_mar()
+lesa_stodvar(con)
+#attach("/net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/Stations.rdata")
+#smb19852017 <-
+#  STODVAR.all %>% 
+#  select(synis_id = synis.id, ar, toglengd, strata = oldstrata)
+#copy_to(con, smb19852017, temporary = FALSE)
+
+Stations <-  tbl_mar(con, "ops$einarhj.smb19852016")
 
 
 std.cv <- 1
@@ -210,21 +216,21 @@ p +
 __Digression - calculate only those stations "now" taken__:
 
 ```{r}
-db <- src_oracle("mar")
+con <- connect_mar()
 ```
 
 ```{r, eval = FALSE}
 # not run
 st <- 
-  tbl_mar(db, "ops$einarhj.smb19852016") %>% 
-  left_join(lesa_stodvar(db) %>% select(synis_id, reitur, tognumer,
+  tbl_mar(con, "ops$einarhj.smb19852016") %>% 
+  left_join(lesa_stodvar(con) %>% select(synis_id, reitur, tognumer,
                                         lon = kastad_v_lengd,
                                         lat = kastad_n_breidd)) %>% 
   collect() %>% 
   mutate(id = paste(reitur, tognumer))
 
 st17 <- 
-  lesa_stodvar(db) %>% 
+  lesa_stodvar(con) %>% 
   filter(ar == 2017, synaflokkur == 30, veidarfaeri == 73) %>% 
   select(synis_id, ar, reitur, toglengd,
          lon = kastad_v_lengd,
@@ -246,7 +252,7 @@ STTAKEN4 <-
   bind_rows(st17) %>% 
   filter(!is.na(strata))
 
-copy_to(db, STTAKEN4, temporary = FALSE)
+copy_to(con, STTAKEN4, temporary = FALSE)
 ```
 
 ```{r}
@@ -254,7 +260,7 @@ calc_by_strata <- function(d) {
   
   # Stuff should not really be inside this function
   Stratas <- 
-  tbl_mar(db, "ops$einarhj.stratas") %>% 
+  tbl_mar(con, "ops$einarhj.stratas") %>% 
   select(strata, area = rall.area)
     
   d %>% 
@@ -278,7 +284,7 @@ calc_by_strata <- function(d) {
   
   # Stuff should not really be inside this function
   Stratas <- 
-  tbl_mar(db, "ops$einarhj.stratas") %>% 
+  tbl_mar(con, "ops$einarhj.stratas") %>% 
   select(strata, area = rall.area)
     
   d %>% 
@@ -313,10 +319,10 @@ aggregate_by_year <- function(d) {
 }
 
 Length <- 5 # Index for fish length equal to or larger than
-db <- src_oracle("mar")
-Stations <-  tbl_mar(db, "ops$einarhj.STTAKEN4")
+con <- connect_mar()
+Stations <-  tbl_mar(con, "ops$einarhj.STTAKEN4")
 
-teg <- lesa_tegundir(db) %>% 
+teg <- lesa_tegundir(con) %>% 
   collect(n = Inf) %>% 
   arrange(tegund)
 
@@ -362,9 +368,9 @@ d %>%
 ```
 
 ```{r}
-db <- src_oracle("mar")
+con <- connect_mar()
 st <- 
-  lesa_stodvar(db) %>% 
+  lesa_stodvar(con) %>% 
   filter(ar == 2017, synaflokkur == 30, veidarfaeri == 73) %>% 
   select(skip,
          synis_id, ar, reitur, toglengd,
@@ -374,12 +380,12 @@ st <-
 nu <-
   st %>% 
   select(synis_id) %>% 
-  left_join(lesa_numer(db)) %>% 
+  left_join(lesa_numer(con)) %>% 
   collect(n = Inf)
 le <- 
   st %>% 
   select(synis_id) %>% 
-  left_join(lesa_lengdir(db)) %>% 
+  left_join(lesa_lengdir(con)) %>% 
   collect(n = Inf)
 st <-
   st %>% 

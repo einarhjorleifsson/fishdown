@@ -2,6 +2,7 @@
 
 ## Preamble
 
+NOTE: Not evaluated, generates error in rendering book
 
 __The flow__:
 ```
@@ -17,13 +18,12 @@ Some stuff below may be an overkill, given the task at hand - but here seeding f
 
 ```{r catch_by_station, message = FALSE}
 library(tidyverse)
-library(dplyrOracle)
 library(mar)
 ```
 
 __Some functions__:
 
-```{r}
+```{r, eval = FALSE}
 gather_length_data <- function(Stations, Species) {
   
   # Here could create an switch, if Stations is connection do below
@@ -123,9 +123,9 @@ catch_by_station <- function(Stations, Species, lwcoeff) {
 
 __Operationally__:
 
-```{r}
+```{r, eval = FALSE}
 Stations <-
-  lesa_stodvar(src_oracle("mar")) %>% 
+  lesa_stodvar(con) %>% 
   filter(veidarfaeri %in% 73,
          tognumer %in% 1:39) %>% 
   select(synis_id, ar, toglengd)
@@ -139,7 +139,7 @@ __Some testing__:
 
 Below some comparison with the "official" catch per station. The difference is due to difference in the treatment of measured fish in cases where the number of fish measured in the length table is not the same as the number of fish measured in the number table.
 
-```{r}
+```{r, eval = FALSE}
 attach("/net/hafkaldi/export/u2/reikn/Splus5/SMB/UTBREIDSLA/.RData")
 N <- 
   utbrteg %>% 
@@ -161,14 +161,14 @@ d <-
 ```
 
 __Cod__:
-```{r}
+```{r, eval = FALSE}
 d %>%
   filter(tegund == 1,
          !near(N, N2)) %>% 
   select(synis_id, toglengd, r, fj_talid, fj_maelt, n, N, N2)
 ```
 
-```{r}
+```{r, eval = FALSE}
 d %>% 
   filter(tegund == 1,
          !near(B, B2)) %>% 
@@ -176,21 +176,21 @@ d %>%
 ```
 
 __Haddock__:
-```{r}
+```{r, eval = FALSE}
 d %>%
   filter(tegund == 2,
          !near(N, N2)) %>% 
   select(synis_id, toglengd, r, fj_talid, fj_maelt, n, N, N2)
 ```
 
-```{r}
+```{r, eval = FALSE}
 d %>% 
   filter(tegund == 2,
          !near(B, B2)) %>% 
   select(synis_id, toglengd, fj_maelt, n, B, B2)
 ```
 
-```{r}
+```{r, eval = FALSE}
 rm(catch_by_station)
 ```
 

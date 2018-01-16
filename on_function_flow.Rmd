@@ -4,9 +4,8 @@
 __Load data to oracle__ (not run):
 ```{r on_function_flow, eval = FALSE}
 library(tidyverse)
-library(dplyrOracle)
 library(mar)
-db <- src_oracle("mar")
+db <- connect_mar()
 
 SMB19852016 <- 
   husky::STODVAR %>% 
