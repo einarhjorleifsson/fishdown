@@ -15,6 +15,10 @@ scale by counted %>%
 standardize by towlength %>%       # on the number only
 calculate_biomass %>%              # up to now on each length class
 summarise_by_station %>%           # now one record per station
+                                   # Note statistic up to now is equivalent
+                                   #   to afli per tog
+                                   # HERE: filter station to use
+                                   #       i.e. fixed etc
 summarise_by_strata %>%            # one record per strata
 summarise                          # one record per year
 ```
@@ -42,11 +46,6 @@ trim_towlength <- function(d, std.towlength = 4, min.towlength = 2, max.towlengt
     mutate(toglengd = if_else(toglengd < min.towlength, min.towlength, toglengd))
 }
 
-standardise_towlength <- function(d, std.towlength = 4) {
-  
-  d %>% mutate(N = N * std.towlength/toglengd)
-  
-}
 
 gather_length_data <- function(Stations, Species, Length = 0) {
   
@@ -57,7 +56,7 @@ gather_length_data <- function(Stations, Species, Length = 0) {
     filter(tegund %in% Species,
            lengd >= Length) %>% 
     group_by(synis_id, tegund, lengd) %>% 
-    summarise(fjoldi = sum(fjoldi)) %>% 
+    summarise(fjoldi = sum(fjoldi, na.rm = TRUE)) %>% 
     ungroup()
   
   Counts <-
@@ -72,6 +71,7 @@ gather_length_data <- function(Stations, Species, Length = 0) {
   
 }
 
+
 scale_by_counted <- function(d) {
   d %>% 
     mutate(fjoldi = r * fjoldi / 1e3) %>%   # units of thousan
@@ -85,7 +85,6 @@ standardise_towlength <- function(d, std.towlength = 4) {
     select(-toglengd)
 
 }
-
 
 calculate_biomass <- function(d) {
   
@@ -113,10 +112,10 @@ calc_by_strata <- function(d) {
   d %>% 
     group_by(ar, strata) %>% 
   dplyr::summarise(sN  = n(),   # Number of stations within strata
-                   n_m  = mean(N),
-                   n_d  = ifelse(n() == 1, mean(N) * std.cv, sd(N)),
-                   b_m  = mean(B),
-                   b_d  = ifelse(n() == 1, mean(B) * std.cv, sd(B))) %>% 
+                   n_m  = mean(N, na.rm = TRUE),
+                   n_d  = ifelse(n() == 1, mean(N, na.rm = TRUE) * std.cv, sd(N)),
+                   b_m  = mean(B, na.rm = TRUE),
+                   b_d  = ifelse(n() == 1, mean(B, na.rm = TRUE) * std.cv, sd(B))) %>% 
   #b_d  = ifelse(N == 1, b_m  * std.cv, stats::sd(b)),
   ungroup() %>%
   left_join(Stratas, by = "strata") %>%
@@ -133,9 +132,9 @@ aggregate_by_year <- function(d) {
   d %>% 
     group_by(ar) %>%
     # A la Höski:
-    summarise(n = sum(n),
+    summarise(n = sum(n, na.rm = TRUE),
               n.cv = pax:::calc_cv(n_m, n_d, area, sN),
-              b = sum(b),
+              b = sum(b, na.rm = TRUE),
               b.cv = pax:::calc_cv(b_m, b_d, area, sN)) %>% 
     ungroup()
   
@@ -144,32 +143,48 @@ aggregate_by_year <- function(d) {
 
 __Run the flow__:
 ```{r}
-Length <- 5 # Index for fish length equal to or larger than
+LENGTH <- 5 # Index for fish length equal to or larger than
 con <- connect_mar()
-lesa_stodvar(con)
-#attach("/net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/Stations.rdata")
-#smb19852017 <-
-#  STODVAR.all %>% 
-#  select(synis_id = synis.id, ar, toglengd, strata = oldstrata)
-#copy_to(con, smb19852017, temporary = FALSE)
+```
 
-Stations <-  tbl_mar(con, "ops$einarhj.smb19852016")
+**Let's clean up the lates mess from the vatican**:
+```{r, eval = FALSE}
+## from /net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/Indices.r
+## Fixed stations not originally set out
+#fixedind <- c(31931, 31932, 32131, 36731, 37031, 37131, 37132,
+#              37231, 41431, 41531, 42231, 42232, 47431, 52331)
+## wat!
+#notfixedInd <- c(27401, 37212, 37302, 41214, 41412, 46211, 46212,
+#                 46214, 46216, 46311, 46312, 46313, 51301, 52413,
+
+# NOT RUN
+attach("/net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/Stations.rdata")
+smb <-
+  STODVAR.all %>% 
+  filter(tognumer %in% 1:39 | is.na(tognumer)) %>% 
+  select(synis_id = synis.id, ar, toglengd, strata = oldstrata, lon, lat)
+dbWriteTable(con, name = "smbstations", value = smb, overwrite = TRUE)
+detach("file:/net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/Stations.rdata")
+```
 
 
+```{r}
+Stations <-  
+  tbl(con, "smbstations")
 std.cv <- 1
 std.area <- 4 * 17/1852
 Stations %>%
   trim_towlength() %>% 
   #left_join(Stratas) %>% 
-  gather_length_data(Species = 1, Length = Length) %>%
+  gather_length_data(Species = 1, Length = LENGTH) %>%
   scale_by_counted() %>% 
   standardise_towlength() %>% 
   calculate_biomass() %>%
   # since not all length classes included can only do the total
   # for the time being to a "verb"
   group_by(synis_id, ar, strata, tegund) %>% 
-  summarise(N = sum(N),
-            B = sum(B)) %>% 
+  summarise(N = sum(N, na.rm = TRUE),
+            B = sum(B, na.rm = TRUE)) %>% 
   # Zero stations
   mutate(N = ifelse(is.na(N), 0, N),
          B = ifelse(is.na(B), 0, B)) %>% 
@@ -192,25 +207,47 @@ p <-
   geom_line(colour = "red", lwd = 1) +
   scale_colour_brewer(palette = "Set1")
 
+
 attach("/net/hafkaldi/export/u2/reikn/Splus5/SMB/Allindices.RData")
-mri <- 
+mri.2016 <- 
   All.indices %>% 
   filter(species == 1,
          svaedi == "Heild",
-         lengd == Length,
+         lengd == LENGTH,
          type == "all") %>% 
   select(year = ar, cb = bio.staerri, cb.cv = cv.bio.staerri, type) %>% 
-  mutate(source = "mri")
+  mutate(source = "mri.2016")
 detach("file:/net/hafkaldi/export/u2/reikn/Splus5/SMB/Allindices.RData")
+
+
+
+
+
+attach("/net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/Allaggroldsmbindex.rdata")
+mri <- 
+  Allaggroldsmbindex %>% 
+  filter(species == 1,
+         svaedi == "Heild",
+         lengd == LENGTH,
+         diurnal == 0,
+         fixed == 0) %>% 
+  select(year = ar, cb = bio.staerri, cb.cv = cv.bio.staerri) %>% 
+  mutate(source = "mri") %>% 
+  as_tibble()
+detach("file:/net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/Allaggroldsmbindex.rdata")
 p +
   geom_pointrange(data = mri, 
                   aes(ymin = cb * (1 - cb.cv),
                       ymax = cb * (1 + cb.cv)),
                   colour = "yellow") +
-  geom_line(data = mri, colour = "yellow") +
+  geom_line(data = mri, colour = "yellow") + 
+  geom_pointrange(data = mri.2016,
+                  aes(ymin = cb * (1 - cb.cv),
+                      ymax = cb * (1 + cb.cv)),
+                  colour = "blue") +
   labs(x = NULL, y = NULL,
        title = "Biomass indices",
-       subtitle = "Comparison of the mar (red) and the Bible (grey)")
+       subtitle = "Comparison of the mar (red) mar 2016 (blue) and the Bible (grey)")
 ```
 
 __Digression - calculate only those stations "now" taken__:
