@@ -1,6 +1,25 @@
 # On stratas
 
-```{r on_stratas}
-
+```{r, message = FALSE}
+library(gisland)
+library(tidyverse)
+gisland::stratas.sp %>% 
+  ggplot(aes(long, lat, group = group, fill = as.factor(id))) +
+  geom_polygon() +
+  geom_path(colour = "white") +
+  coord_quickmap() +
+  theme_void() +
+  ggmisc::scale_fill_crayola() +
+  theme(legend.position = "none")
 ```
 
+```{r}
+gisland::stratasnew.sp %>% 
+  ggplot(aes(long, lat, group = group, fill = as.factor(id))) +
+  geom_polygon() +
+  geom_path(colour = "white") +
+  coord_quickmap() +
+  theme_void() +
+  ggmisc::scale_fill_crayola() +
+  theme(legend.position = "none")
+```

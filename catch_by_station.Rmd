@@ -2,8 +2,6 @@
 
 ## Preamble
 
-NOTE: Not evaluated, generates error in rendering book
-
 __The flow__:
 ```
 Stations %>% 
@@ -19,11 +17,12 @@ Some stuff below may be an overkill, given the task at hand - but here seeding f
 ```{r catch_by_station, message = FALSE}
 library(tidyverse)
 library(mar)
+con <- connect_mar()
 ```
 
 __Some functions__:
 
-```{r, eval = FALSE}
+```{r, eval = TRUE}
 gather_length_data <- function(Stations, Species) {
   
   # Here could create an switch, if Stations is connection do below
@@ -38,7 +37,9 @@ gather_length_data <- function(Stations, Species) {
   Counts <-
     lesa_numer(Stations$src) %>% 
     filter(tegund %in% Species) %>% 
-    mutate(r =  ifelse(fj_maelt != 0, 1 + fj_talid/fj_maelt, 1)) %>% 
+    mutate(r = ifelse(fj_talid==0 | is.na(fj_talid),
+                      1,
+                      1 + fj_talid / ifelse(fj_maelt == 0 | is.na(fj_maelt), 1, fj_maelt))) %>% 
     select(synis_id, tegund, fj_maelt, fj_talid, r)
   
   Stations %>% 
@@ -123,7 +124,7 @@ catch_by_station <- function(Stations, Species, lwcoeff) {
 
 __Operationally__:
 
-```{r, eval = FALSE}
+```{r, eval = TRUE}
 Stations <-
   lesa_stodvar(con) %>% 
   filter(veidarfaeri %in% 73,
@@ -139,8 +140,9 @@ __Some testing__:
 
 Below some comparison with the "official" catch per station. The difference is due to difference in the treatment of measured fish in cases where the number of fish measured in the length table is not the same as the number of fish measured in the number table.
 
-```{r, eval = FALSE}
-attach("/net/hafkaldi/export/u2/reikn/Splus5/SMB/UTBREIDSLA/.RData")
+```{r, eval = TRUE}
+#attach("/net/hafkaldi/export/u2/reikn/Splus5/SMB/UTBREIDSLA/.RData")
+attach("/net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/catchperstation.rdata")
 N <- 
   utbrteg %>% 
   tbl_df() %>% 
@@ -153,7 +155,7 @@ B <-
   select(synis_id = synis.id, `1` = torskur.kg, `2` = ysa.kg) %>% 
   gather(key = tegund, value = B2, -synis_id, convert = TRUE) %>% 
   mutate(B2 = as.numeric(B2))
-detach("file:/net/hafkaldi/export/u2/reikn/Splus5/SMB/UTBREIDSLA/.RData")
+detach("file:/net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/catchperstation.rdata")
 d <- 
   d %>% 
   left_join(N) %>% 
@@ -161,14 +163,14 @@ d <-
 ```
 
 __Cod__:
-```{r, eval = FALSE}
+```{r, eval = TRUE}
 d %>%
   filter(tegund == 1,
          !near(N, N2)) %>% 
   select(synis_id, toglengd, r, fj_talid, fj_maelt, n, N, N2)
 ```
 
-```{r, eval = FALSE}
+```{r, eval = TRUE}
 d %>% 
   filter(tegund == 1,
          !near(B, B2)) %>% 
@@ -176,21 +178,21 @@ d %>%
 ```
 
 __Haddock__:
-```{r, eval = FALSE}
+```{r, eval = TRUE}
 d %>%
   filter(tegund == 2,
          !near(N, N2)) %>% 
   select(synis_id, toglengd, r, fj_talid, fj_maelt, n, N, N2)
 ```
 
-```{r, eval = FALSE}
+```{r, eval = TRUE}
 d %>% 
   filter(tegund == 2,
          !near(B, B2)) %>% 
   select(synis_id, toglengd, fj_maelt, n, B, B2)
 ```
 
-```{r, eval = FALSE}
+```{r, eval = TRUE}
 rm(catch_by_station)
 ```
 
