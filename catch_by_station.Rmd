@@ -31,7 +31,7 @@ gather_length_data <- function(Stations, Species) {
     lesa_lengdir(Stations$src) %>% 
     filter(tegund %in% Species) %>% 
     group_by(synis_id, tegund, lengd) %>% 
-    summarise(fjoldi = sum(fjoldi)) %>% 
+    summarise(fjoldi = sum(fjoldi, na.rm = TRUE)) %>% 
     ungroup()
   
   Counts <-
@@ -92,14 +92,14 @@ catch_by_station <- function(Stations, Species, lwcoeff) {
     #  cumulate_data() %>% 
     # would be nicer to have the collect() here 
     group_by(synis_id, ar, tegund) %>% 
-    summarise(toglengd = max(toglengd),
-              r = max(r),
-              fj_talid = max(fj_talid),
+    summarise(toglengd = max(toglengd, na.rm = TRUE),
+              r = max(r, na.rm = TRUE),
+              fj_talid = max(fj_talid, na.rm = TRUE),
               # next two columns should be the same, kept here for debugging
-              fj_maelt = max(fj_maelt),   # as recorded in fiskar.numer
-              n = sum(fjoldi),            # as calculated in fiskar.lengdir
-              N = sum(N),                 # raised numbers
-              B = sum(B)) %>%             # raised biomass
+              fj_maelt = max(fj_maelt, na.rm = TRUE),   # as recorded in fiskar.numer
+              n = sum(fjoldi, na.rm = TRUE),            # as calculated in fiskar.lengdir
+              N = sum(N, na.rm = TRUE),                 # raised numbers
+              B = sum(B, na.rm = TRUE)) %>%             # raised biomass
     collect(n = Inf)
 
   

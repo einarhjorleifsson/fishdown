@@ -3,7 +3,7 @@
 ```{r, message = FALSE}
 library(gisland)
 library(tidyverse)
-gisland::stratas.sp %>% 
+gisland::stratas.sp %>%
   ggplot(aes(long, lat, group = group, fill = as.factor(id))) +
   geom_polygon() +
   geom_path(colour = "white") +

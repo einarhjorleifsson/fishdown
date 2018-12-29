@@ -10,4 +10,5 @@ rmd_files: ["index.Rmd",
             "length_indices_mar.Rmd",
             "age_indices.Rmd",
             "catch.Rmd",
+            "spatial.Rmd",
             "epilogue.Rmd"]

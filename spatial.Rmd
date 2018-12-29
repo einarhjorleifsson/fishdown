@@ -1,0 +1,121 @@
+# On spatial operations
+
+## Geocomputation
+
+### Attribute operations
+
+```{r}
+library(tidyverse)
+library(sf)
+library(tmap)
+```
+
+```{r}
+fao <- 
+  gisland::read_sf_ftp("fao-areas") %>% 
+  mutate(area = str_sub(name, 1, 2) %>% as.integer())
+fao_na <- 
+  fao %>% 
+  filter(area %in% c(21, 27))
+plot(fao_na["name"])
+```
+
+
+```{r}
+bb <- st_bbox(fao_na)
+n <- 1e3
+d <- 
+  data_frame(id = 1:n,
+             lon = runif(n, bb[[1]], bb[[3]]),
+             lat = runif(n,  bb[[2]],  bb[[4]])) %>% 
+  st_as_sf(coords = c("lon", "lat"),
+           crs = st_crs(fao_na))
+```
+
+### Spatial operations
+
+#### Filter
+
+```{r}
+# Only points inside FAO areas 21 and 27
+d2 <- d[fao_na, ]
+# same as:
+# d2 <- d[fao, , op = st_intersects]
+nrow(d2)
+
+# alternatively
+sel_sgbp = st_intersects(x = d, y = fao_na)
+class(sel_sgbp)
+# turn into a logical
+i = lengths(sel_sgbp) > 0
+d2 = d[i, ]
+```
+
+#### Getting area attribute for a point:
+```{r}
+ices <- 
+  fao_na %>% 
+  filter(area %in% c(27)) %>% 
+  mutate(colval = runif(n()))
+plot(ices["name"])
+
+
+d2 <-
+  d %>% 
+  st_join(ices %>% select(name, colval))
+
+
+
+ggplot(d2) +
+  theme_bw() +
+  geom_sf(data = ices, aes(fill = colval), alpha = 0.3) +
+  geom_sf(aes(colour = colval)) +
+  scale_fill_distiller(palette = "Spectral") +
+  scale_colour_distiller(palette = "Dark2", direction = -1) +
+  theme(legend.position = "none")
+table(d2$name, useNA = "ifany")
+```
+
+
+```{r, eval = FALSE}
+n <- 1e3
+d <- 
+  data_frame(id = 1:n,
+             lon = runif(n, bb[[1]], bb[[3]]),
+             lat = runif(n,  bb[[2]],  bb[[4]])) %>% 
+  st_as_sf(coords = c("lon", "lat"),
+           crs = st_crs(fao_na))
+x <- st_within(d, ices, sparse = TRUE)
+```
+
+
+```{r}
+# tmap_mode("view")
+# p
+
+# # test on larger dataset
+# n <- 1e6
+# set.seed(2018)
+# bb <- st_bbox(ices)
+# d <- 
+#   tibble(
+#   id = 1:n,
+#   x = runif(n = n, min = bb[1], max = bb[3]),
+#   y = runif(n = n, min = bb[2], max = bb[4])) %>% 
+#   st_as_sf(coords = c("x", "y")) %>% 
+#   st_set_crs(4326) %>% 
+#   st_join(ices["name"])
+
+
+```
+
+## On CRS
+
+
+```{r}
+library(tmap)
+tmap_options(max.categories = 66)
+tm_shape(ices) +
+  tm_polygons("name")
+```
+

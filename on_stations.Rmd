@@ -1,0 +1,305 @@
+# On stations
+
+## SMB
+
+In 2017 the tow-index for tows having "tognumer" less than 40 have been fixed to strata. The code used in 2018 to generate the "official" index can be found under /u2/reikn/R/SurveyWork/SMB/stodvar.r
+
+What follows is a tidy mimicry of that code:
+
+```{r, message = FALSE, warning = FALSE}
+library(mar)
+con <- connect_mar()
+
+index.strata <- 
+  tbl(con, "SMB_INDEX_STRATA_AREA")
+
+st <-
+  lesa_stodvar(con) %>%
+  filter(synaflokkur == 30) %>%
+  mutate(tognumer = ifelse(synis_id == 474396, 1, tognumer),
+         index = reitur * 100 + tognumer,
+         # not needed
+         # filter(!index %in% c(56835,56836))
+         lon = ifelse(is.na(hift_v_lengd),
+                      kastad_v_lengd,
+                      (kastad_v_lengd + hift_v_lengd) / 2),
+         lat = ifelse(is.na(hift_n_breidd),
+                      kastad_n_breidd,
+                      (kastad_n_breidd + hift_n_breidd) / 2)) %>% 
+  left_join(index.strata, by = "index")
+# checking - all townumbers less than 40 should have a defined strata
+st %>% 
+  mutate(less40 = ifelse(tognumer < 40, 1, 0),
+         def.old = ifelse(!is.na(stdoldstrata), 1, 0),
+         def.new = ifelse(!is.na(stdnewstrata), 1, 0)) %>% 
+  group_by(less40) %>% 
+  summarise(n = n(),
+            def.old = sum(def.old, na.rm = TRUE),
+            def.new = sum(def.new, na.rm = TRUE)) %>% 
+  collect(n = Inf)
+# So all tows (19142) less than 40 have assigned a strata
+#    123 tows are above 40 and they do not (naturally have a strata)
+
+# function in package husky changed so it returns a vector
+inside_strata <- 
+  function (stodvar, stratalist = ralllist, stratas = STRATAS) {
+  stodvar$newstrata <- rep(0, nrow(stodvar))
+  for (i in stratalist) {
+    j <- geo::geoinside(stodvar, reg = stratas[[i]], robust = T, 
+                        option = 0)
+    if (length(j) > 0) 
+      stodvar[j, "newstrata"] <- i
+  }
+  i <- stodvar$newstrata == 0
+  if (any(i)) {
+    i1 <- 1:length(i)
+    i1 <- i1[i]
+    cat("Strata fannst ekki fyrir stodvar", paste(i1, collapse = ","))
+  }
+  return(stodvar$newstrata)
+}
+
+# ------------------------------------------------------------------------------
+# For stations > 40
+d <-
+  st %>% 
+  collect(n = Inf)
+
+# load STRATAS
+# Rattach("/u2/reikn/R/SurveyWork/OldStratas", pos = 2)
+d <- 
+  d %>%
+  mutate(oldstrata = inside_strata(.,
+                                   stratalist = husky::ralllist,
+                                   stratas = husky::STRATAS),
+         newstrata = inside_strata(.,
+                                   stratalist = husky::smblist$nr,
+                                   stratas = husky::NEWSTRATAS))
+# Smá lagfæringar
+d <- 
+  d %>% 
+  mutate(oldstrata = ifelse(oldstrata %in% 23, 88, oldstrata),
+         newstrata = ifelse(index %in% 71741 & ar %in% 2009, 37, newstrata),
+         newstrata = ifelse(index %in% 61141 & ar %in% 2010, 42, newstrata))
+
+d <-
+  d %>% 
+  mutate(oldstrata = ifelse(tognumer < 40, stdoldstrata, oldstrata),
+         newstrata = ifelse(tognumer < 40, stdnewstrata, newstrata)) %>% 
+  select(-c(stdoldstrata, stdnewstrata))
+
+# ------------------------------------------------------------------------------
+# checking
+library(tidyverse)
+load("/u2/reikn/R/SurveyWork/SMB/Stations.rdata")
+STODVAR.all %>% 
+  filter(tognumer < 40) %>% 
+  select(index, area) %>% 
+  distinct() %>% 
+  group_by(index) %>% 
+  count() %>% 
+  arrange(-n)
+
+d2 <- STODVAR.all
+
+x <- 
+  d %>% 
+  select(synis_id, index, oldstrata, newstrata) %>% 
+  arrange(synis_id)
+x2 <-
+  STODVAR.all %>%
+  select(synis_id = synis.id, index, oldstrata, newstrata) %>% 
+  as_tibble() %>% 
+  arrange(synis_id)
+identical(x, x2)
+```
+
+Now check for the Bormicon area
+```{r}
+x <- 
+  d %>%
+  filter(tognumer < 40) %>% 
+  select(synis_id, area) %>% 
+  arrange(synis_id)
+x2 <-
+  STODVAR.all %>% 
+  filter(tognumer < 40) %>% 
+  select(synis_id = synis.id, area) %>% 
+  as_tibble() %>% 
+  arrange(synis_id)
+identical(x, x2)
+
+STODVAR.all %>% 
+  filter(tognumer < 40) %>% 
+  select(index, area) %>% 
+  distinct() %>% 
+  group_by(index) %>% 
+  count() %>% 
+  arrange(-n)
+```
+
+So we have in the official calculation index that falls in different bormicon areas in different years. Not something I expected.
+
+Lets see however if we can mimic this for the tidyverse:
+```{r}
+library(geo)
+x <- 
+  d %>% 
+  filter(tognumer < 40) %>% 
+  select(synis_id, index, lon, lat, area.fixed = area)
+x <- inside.reg.bc(x)
+x %>% filter(area.fixed != area)
+x <- x %>% select(synis_id, area) %>% arrange(synis_id)
+identical(x, x2)
+```
+
+Lets try for all stations, i.e. also those over 40
+```{r}
+x <- 
+  d %>% 
+  select(synis_id, index, lon, lat, area.fixed = area)
+x <- inside.reg.bc(x)
+x <- x %>% select(synis_id, area) %>% arrange(synis_id)
+x2 <-
+  STODVAR.all %>% 
+  select(synis_id = synis.id, area) %>% 
+  as_tibble() %>% 
+  arrange(synis_id)
+identical(x, x2)
+```
+
+## Start from scratch
+
+```{r}
+library(mar)
+con <- connect_mar()
+
+st <-
+  lesa_stodvar(con) %>%
+  filter(synaflokkur == 30) %>%
+  mutate(tognumer = ifelse(synis_id == 474396, 1, tognumer)) %>%
+  mutate(index = reitur * 100 + tognumer) %>%
+  # not needed
+  # filter(!index %in% c(56835,56836))
+  mutate(lon = ifelse(is.na(hift_v_lengd),
+                      kastad_v_lengd,
+                      (kastad_v_lengd + hift_v_lengd) / 2),
+         lat = ifelse(is.na(hift_n_breidd),
+                      kastad_n_breidd,
+                      (kastad_n_breidd + hift_n_breidd) / 2)) %>% 
+  left_join(tbl(con, "SMB_INDEX_STRATA")) %>% 
+  collect(n = Inf) %>% 
+  mutate(oldstrata = inside_strata(.,
+                                   stratalist = husky::ralllist,
+                                   stratas = husky::STRATAS),
+         newstrata = inside_strata(.,
+                                   stratalist = husky::smblist$nr,
+                                   stratas = husky::NEWSTRATAS)) %>% 
+  # Some fixes -----------------------------------------------------------------
+  mutate(oldstrata = ifelse(oldstrata %in% 23, 88, oldstrata),
+         newstrata = ifelse(index %in% 71741 & ar %in% 2009, 37, newstrata),
+         newstrata = ifelse(index %in% 61141 & ar %in% 2010, 42, newstrata)) %>% 
+  # Use fixed strata for "tognumer" less than 40 -------------------------------
+  mutate(oldstrata = ifelse(tognumer < 40, stdoldstrata, oldstrata),
+         newstrata = ifelse(tognumer < 40, stdnewstrata, newstrata)) %>% 
+  select(-c(stdoldstrata, stdnewstrata)) %>% 
+  # Get the bormicon area for the stations -------------------------------------
+  inside.reg.bc(.)
+```
+
+Double checking:
+```{r}
+x <-
+  st %>% 
+  select(synis_id, oldstrata, newstrata, area) %>% 
+  arrange(synis_id)
+x2 <-
+  STODVAR.all %>% 
+  select(synis_id = synis.id, oldstrata, newstrata, area) %>% 
+  as_tibble() %>% 
+  arrange(synis_id)
+identical(x, x2)
+```
+
+
+## Trial with geo_inside and shapefiles
+
+```{r}
+library(mar)
+con <- connect_mar()
+library(gisland)
+st <-
+  lesa_stodvar(con) %>%
+  filter(synaflokkur == 30) %>%
+  mutate(tognumer = ifelse(synis_id == 474396, 1, tognumer)) %>%
+  mutate(index = reitur * 100 + tognumer) %>%
+  # not needed
+  # filter(!index %in% c(56835,56836))
+  mutate(lon = ifelse(is.na(hift_v_lengd),
+                      kastad_v_lengd,
+                      (kastad_v_lengd + hift_v_lengd) / 2),
+         lat = ifelse(is.na(hift_n_breidd),
+                      kastad_n_breidd,
+                      (kastad_n_breidd + hift_n_breidd) / 2)) %>% 
+  left_join(tbl(con, "SMB_INDEX_STRATA")) %>% 
+  collect(n = Inf) %>% 
+  mutate(oldstrata = geo_inside(lon, lat, gisland::stratas.sp, variable = "ID"),
+         newstrata = geo_inside(lon, lat, gisland::stratasnew.sp, variable = "ID")) %>% 
+  # Some fixes -----------------------------------------------------------------
+  mutate(oldstrata = ifelse(oldstrata %in% 23, 88, oldstrata),
+         newstrata = ifelse(index %in% 71741 & ar %in% 2009, 37, newstrata),
+         newstrata = ifelse(index %in% 61141 & ar %in% 2010, 42, newstrata)) %>% 
+  # Use fixed strata for "tognumer" less than 40 -------------------------------
+  mutate(oldstrata = ifelse(tognumer < 40, stdoldstrata, oldstrata),
+         newstrata = ifelse(tognumer < 40, stdnewstrata, newstrata)) %>% 
+  select(-c(stdoldstrata, stdnewstrata)) %>% 
+  # Get the bormicon area for the stations -------------------------------------
+  mutate(area = geo_inside(lon, lat, gisland::bormicon, variable = "ID"))
+```
+
+Double checking:
+```{r}
+x <-
+  st %>% 
+  select(synis_id, oldstrata, newstrata, area) %>% 
+  arrange(synis_id)
+x2 <-
+  STODVAR.all %>% 
+  select(synis_id = synis.id, lon2 = lon, lat2 = lat, oldstrata, newstrata, area) %>% 
+  as_tibble() %>% 
+  arrange(synis_id)
+identical(x, x2)
+identical(x$synis_id, x2$synis_id)
+identical(as.integer(x$area), as.integer(x2$area))
+identical(as.integer(x$oldstrata), as.integer(x2$oldstrata))
+identical(as.integer(x$newstrata), as.integer(x2$newstrata))
+```
+
+Seem to be boarderline cases:
+
+```{r}
+st %>% 
+  select(synis_id, index, o1 = oldstrata) %>% 
+  full_join(x2 %>% select(synis_id, o2 = oldstrata)) %>% 
+  filter(o1 != o2) %>% 
+  knitr::kable()
+tmp <- 
+  st %>% 
+  select(synis_id, lon1 = lon, lat1 = lat, n1 = newstrata) %>% 
+  full_join(x2 %>% select(synis_id, lon2, lat2, n2 = newstrata)) %>% 
+  filter(n1 != n2)
+tmp %>% 
+  knitr::kable()
+near(tmp$lon1, tmp$lon2) %>% sum()
+table(tmp$n1, tmp$n2)
+```
+
+```{r}
+tmp2 <- tmp %>% select(long = lon1, lat = lat1)
+library(leaflet)
+leaflet(stratasnew.sp) %>% 
+  addTiles() %>% 
+  addPolygons() %>% 
+  addCircleMarkers(data = tmp2, col = "red")
+```
+
