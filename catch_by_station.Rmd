@@ -20,6 +20,34 @@ library(mar)
 con <- connect_mar()
 ```
 
+
+**A case example**:
+
+```{r}
+d <- 
+  lesa_stodvar(con) %>% 
+  filter(synis_id == 41311) %>% 
+  select(synis_id, toglengd) %>% 
+  left_join(lesa_lengdir(con)) %>% 
+  filter(tegund == 2) %>% 
+  skala_med_toldum() %>% 
+  collect(n = Inf)
+d %>% 
+  mutate(counted = fjoldi - fjoldi_oskalad,
+         aaraised = fjoldi * 4 / toglengd - fjoldi) %>% 
+  select(lengd, measured = fjoldi_oskalad, counted, aaraised) %>% 
+  gather(variable, value, -lengd) %>% 
+  ggplot(aes(lengd, value, fill = variable)) +
+  geom_col() +
+  scale_fill_brewer(palette = "Set1")
+```
+
+I.e., we have:
+
+* fish measured
+* fish counted
+* standardization to a certain towlength
+
 __Some functions__:
 
 ```{r, eval = TRUE}
