@@ -25,12 +25,13 @@ con <- connect_mar()
 
 ```{r}
 d <- 
-  lesa_stodvar(con) %>% 
+  les_stod(con) %>% 
+  left_join(les_syni(con)) %>% 
   filter(synis_id == 41311) %>% 
   select(synis_id, toglengd) %>% 
-  left_join(lesa_lengdir(con)) %>% 
-  filter(tegund == 2) %>% 
-  skala_med_toldum() %>% 
+  left_join(les_lengd(con)) %>% 
+  filter(tegund_nr == 2) %>% 
+  mar::skala_med_taldir() %>% 
   collect(n = Inf)
 d %>% 
   mutate(counted = fjoldi - fjoldi_oskalad,
@@ -56,33 +57,35 @@ gather_length_data <- function(Stations, Species) {
   # Here could create an switch, if Stations is connection do below
   #   else read from fjolst
   Lengths <- 
-    lesa_lengdir(Stations$src) %>% 
-    filter(tegund %in% Species) %>% 
-    group_by(synis_id, tegund, lengd) %>% 
+    les_lengd(Stations$src) %>% 
+    filter(tegund_nr %in% Species) %>% 
+    group_by(synis_id, tegund_nr, lengd) %>% 
     summarise(fjoldi = sum(fjoldi, na.rm = TRUE)) %>% 
     ungroup()
   
   Counts <-
-    lesa_numer(Stations$src) %>% 
-    filter(tegund %in% Species) %>% 
-    mutate(r = ifelse(fj_talid==0 | is.na(fj_talid),
+    les_skala(Stations$src) %>% 
+    filter(tegund_nr %in% Species) %>% 
+    mutate(r = ifelse(taldir == 0 | is.na(taldir),
                       1,
-                      1 + fj_talid / ifelse(fj_maelt == 0 | is.na(fj_maelt), 1, fj_maelt))) %>% 
-    select(synis_id, tegund, fj_maelt, fj_talid, r)
+                      1 + taldir / ifelse(maeldir == 0 | is.na(maeldir), 1, maeldir))) %>% 
+    select(synis_id, tegund_nr, fj_maelt = maeldir, fj_talid = taldir, r)
   
   Stations %>% 
     #select(synis_id, ar, toglengd) %>% 
     left_join(Lengths, by = "synis_id") %>% 
-    left_join(Counts, by = c("synis_id", "tegund"))
+    left_join(Counts, by = c("synis_id", "tegund_nr"))
   
 }
 
 calculate_biomass <- function(d) {
   
-  lwcoeff <- tbl_mar(d$src, "ops$einarhj.lwcoeff")
+  lwcoeff <- 
+    tbl_mar(d$src, "ops$einarhj.lwcoeff") %>% 
+    rename(tegund_nr = tegund)
     
   d %>% 
-    left_join(lwcoeff, by = "tegund") %>% 
+    left_join(lwcoeff, by = "tegund_nr") %>% 
     # if lwcoefficient for species not specified use newtons law
     mutate(a = ifelse(is.na(a), 0.01, a),
            b = ifelse(is.na(b), 3.00, b)) %>% 
@@ -98,8 +101,8 @@ calculate_biomass <- function(d) {
 cumulate_data <- function(d) {
   
   d %>% 
-    arrange(synis_id, tegund, lengd) %>% 
-    group_by(synis_id, tegund) %>% 
+    arrange(synis_id, tegund_nr, lengd) %>% 
+    group_by(synis_id, tegund_nr) %>% 
     mutate(cN = cumsum(N),
            cB = sum(B) - cumsum(B) + B) %>% 
     ungroup()
@@ -119,7 +122,7 @@ catch_by_station <- function(Stations, Species, lwcoeff) {
     # next step is not neeed, but if used, the appropriate place is here
     #  cumulate_data() %>% 
     # would be nicer to have the collect() here 
-    group_by(synis_id, ar, tegund) %>% 
+    group_by(synis_id, ar, tegund_nr) %>% 
     summarise(toglengd = max(toglengd, na.rm = TRUE),
               r = max(r, na.rm = TRUE),
               fj_talid = max(fj_talid, na.rm = TRUE),
@@ -141,9 +144,9 @@ catch_by_station <- function(Stations, Species, lwcoeff) {
   # e.g. length(st$synis_id) * length(Species) * length(0:160) is 59 million rows!
   #  the object d above (for cod and haddock) is only 0.9 million rows
   expand.grid(synis_id = st$synis_id,
-              tegund = Species) %>% 
+              tegund_nr = Species) %>% 
     tbl_df() %>% 
-    left_join(d, by = c("synis_id", "tegund")) %>% 
+    left_join(d, by = c("synis_id", "tegund_nr")) %>% 
     mutate(N = ifelse(is.na(N), 0, N),
            B = ifelse(is.na(B), 0, B))
 
@@ -154,9 +157,10 @@ __Operationally__:
 
 ```{r, eval = TRUE}
 Stations <-
-  lesa_stodvar(con) %>% 
+  les_stod(con) %>%
+  left_join(les_syni(con)) %>% 
   filter(veidarfaeri %in% 73,
-         tognumer %in% 1:39) %>% 
+         tog_nr %in% 1:39) %>% 
   select(synis_id, ar, toglengd)
 
 d <- 
@@ -175,13 +179,13 @@ N <-
   utbrteg %>% 
   tbl_df() %>% 
   select(synis_id = synis.id, `1` = torskur.stk, `2` = ysa.stk) %>% 
-  gather(key = tegund, value = N2, -synis_id, convert = TRUE) %>% 
+  gather(key = tegund_nr, value = N2, -synis_id, convert = TRUE) %>% 
   mutate(N2 = as.numeric(N2))
 B <- 
   utbrteg %>% 
   tbl_df() %>% 
   select(synis_id = synis.id, `1` = torskur.kg, `2` = ysa.kg) %>% 
-  gather(key = tegund, value = B2, -synis_id, convert = TRUE) %>% 
+  gather(key = tegund_nr, value = B2, -synis_id, convert = TRUE) %>% 
   mutate(B2 = as.numeric(B2))
 detach("file:/net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/catchperstation.rdata")
 d <- 
@@ -193,14 +197,14 @@ d <-
 __Cod__:
 ```{r, eval = TRUE}
 d %>%
-  filter(tegund == 1,
+  filter(tegund_nr == 1,
          !near(N, N2)) %>% 
   select(synis_id, toglengd, r, fj_talid, fj_maelt, n, N, N2)
 ```
 
 ```{r, eval = TRUE}
 d %>% 
-  filter(tegund == 1,
+  filter(tegund_nr == 1,
          !near(B, B2)) %>% 
   select(synis_id, toglengd, fj_talid, fj_maelt, n, B, B2)
 ```
@@ -208,14 +212,14 @@ d %>%
 __Haddock__:
 ```{r, eval = TRUE}
 d %>%
-  filter(tegund == 2,
+  filter(tegund_nr == 2,
          !near(N, N2)) %>% 
   select(synis_id, toglengd, r, fj_talid, fj_maelt, n, N, N2)
 ```
 
 ```{r, eval = TRUE}
 d %>% 
-  filter(tegund == 2,
+  filter(tegund_nr == 2,
          !near(B, B2)) %>% 
   select(synis_id, toglengd, fj_maelt, n, B, B2)
 ```
@@ -223,7 +227,4 @@ d %>%
 ```{r, eval = TRUE}
 rm(catch_by_station)
 ```
-
-
-
 

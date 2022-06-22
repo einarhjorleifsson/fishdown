@@ -6,9 +6,4 @@ rmd_files: ["index.Rmd",
             "on_function_flow.Rmd",
             "on_stations.Rmd",
             "catch_by_station.Rmd",
-            "on_stratas.Rmd",
-            "length_indices_mar.Rmd",
-            "age_indices.Rmd",
-            "catch.Rmd",
-            "spatial.Rmd",
-            "epilogue.Rmd"]
+            "length_indices_mar.Rmd"]

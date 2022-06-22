@@ -7,8 +7,10 @@
 library(tidyverse)
 library(fjolst)    # for the time being
 library(pax)
+library(gam)
 ```
 
+## Some older trials
 
 Still under development (needs further testing), but here is one trial.
 
@@ -51,4 +53,389 @@ x$aggr %>%
 ```
 
 Above it not a perfect match with the husky-approach, but who says the latter is correct :-)
+
+## Gods code
+
+original code on: /net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/AgeIndex/codold.r
+
+here changed so it works irrespective of being in a specific working directory:
+```{r, eval = FALSE}
+TEG <- 1
+home <- "/net/hafkaldi/export/u2/reikn/R/SurveyWork/"
+husky::Rattach(paste(home,"ALKPrograms",sep="/"))
+load("/net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/Stations.rdata")
+lastyear <- 2018
+
+# ------------------------------------------------------------------------------
+# 1. Estimate various statistics based on data from 1993 onwards
+#  This is to be used for years 1985 to 1992, a period prior to Hafvog
+
+years <- 1993:lastyear
+le <- 8:135
+cn <- c("lat","lon","synis.id","area","ar")
+st <- STODVAR.all[STODVAR.all$ar %in% years,cn]
+tmp <- lesa.stodvar(leidangur="A4-2001")
+st <- rbind(st,tmp[,c(cn)])
+regs <- c("N","S") 
+kvtorskur <- lesa.kvarnir(st$synis.id,TEG,c("kyn","kynthroski","slaegt","oslaegt","lifur","kynfaeri"))
+
+#  kvtorskur <- kv.filter(kvtorskur,1) bara hægt þegar aldur er kominn.  
+kvtorskur <- filter.lengdthyngd(kvtorskur,oslaegt=T)
+  
+#  kvtorskur <- filter.lengdthyngd(kvtorskur,oslaegt=F) # Eyðir smælki.Gert seinna.  
+#  kvtorskur <- kvtorskur[!is.na(kvtorskur$lifur),]
+cn <- c("synis.id","lat","lon","area","ar")
+kvtorskur <- fjolst:::join(kvtorskur,st[,cn],"synis.id")
+kvtorskur$reg <- ifelse(is.na(match(kvtorskur$area,c(1,9,10,13))),"N","S")
+kvtorskur$kynth <- ifelse(kvtorskur$kynthroski==1 | is.na(kvtorskur$kynthroski),0,1)
+  
+tmp <- kvtorskur[,c("slaegt","lengd","reg","ar","oslaegt","lifur")]
+
+
+tmp1 <- filter.lengdthyngd(tmp,oslaegt=F)
+tmp1a <- tmp[!is.na(tmp$lifur) & tmp$lifur < 0.2*tmp$oslaegt,]
+i <- tmp1a$lifur < 0.003*tmp1a$oslaegt;if(any(i)) tmp1a$lifur[i] <- tmp1a$oslaegt[i]*0.003
+  
+pred.data <- expand.grid(list(lengd=le,reg=regs))
+pred.data$oslaegt <- pred.data$slaegt <- pred.data$lengd
+x <- glm(oslaegt~log(lengd),data=tmp,family=Gamma(link=log))
+x1 <- glm(slaegt~log(lengd),data=tmp1,family=Gamma(link=log))
+x1a <- glm(lifur~log(lengd),data=tmp1a,family=Gamma(link=log))
+  
+pred.data$oslaegt <- predict(x,pred.data,type="response")
+pred.data$slaegt <- predict(x1,pred.data,type="response")
+pred.data$lifur <- predict(x1a,pred.data,type="response")
+pred.data.first <- pred.data
+  
+  
+tmp$wt <- rep(1,nrow(tmp)) 
+pred.data$wt <- rep(0.05,nrow(pred.data))
+tmp2 <- rbind(pred.data,tmp[,names(pred.data)])
+
+tmp1$wt <- rep(1,nrow(tmp1)) 
+pred.data$wt <- rep(0.05,nrow(pred.data))
+tmp3 <- rbind(pred.data,tmp1[,names(pred.data)])
+  
+tmp1a$wt <- rep(1,nrow(tmp1a)) 
+pred.data$wt <- rep(0.05,nrow(pred.data))
+tmp4 <- rbind(pred.data,tmp1a[,names(pred.data)])
+  
+x <- gam(oslaegt~s(log(lengd),df=8)*factor(reg),data=tmp2,family=Gamma(link=log))
+i <- tmp2$wt < 0.1
+pred.data$oslaegt <- x$fitted.values[i]
+  
+x1 <- gam(slaegt~s(log(lengd),df=8)*factor(reg),data=tmp3,family=Gamma(link=log))
+i <- tmp3$wt < 0.1
+pred.data$slaegt <- x1$fitted.values[i]
+  
+x1a <- gam(lifur~s(log(lengd),df=8)*factor(reg),data=tmp4,family=Gamma(link=log))
+i <- tmp4$wt < 0.1
+pred.data$lifur <- x1a$fitted.values[i]
+
+
+
+
+
+x3 <- apply.shrink(tmp1$slaegt, tmp1$lengd, mean,names=c("lengd","slaegt.maelt"))
+x3 <- fjolst:::join(x3,apply.shrink(tmp$oslaegt, tmp$lengd, mean,names=c("lengd","oslaegt.maelt")),"lengd")
+x3 <- fjolst:::join(x3,apply.shrink(tmp1a$lifur, tmp1a$lengd, mean,names=c("lengd","lifur.maelt")),"lengd")
+
+pred.data <- fjolst:::join(pred.data,x3,"lengd")
+pred.data$oslaegt1 <- pred.data.first$oslaegt # úr a*l^b
+pred.data$slaegt1 <- pred.data.first$slaegt # úr a*l^b
+pred.data$lifur1 <- pred.data.first$lifur # úr a*l^b
+
+torskur.marsrall.wt.all <- pred.data
+  
+#  par(ask=T)
+#  plot(pred.data$lengd, pred.data$oslaegt.maelt/pred.data$oslaegt)
+#  plot(log(pred.data$lengd),log(pred.data$oslaegt))  
+#  plot(pred.data$lengd, pred.data$slaegt.maelt/pred.data$slaegt)  
+#  plot(log(pred.data$lengd),log(pred.data$slaegt))  
+#  plot(pred.data$lengd, pred.data$lifur.maelt/pred.data$lifur)  
+#  plot(log(pred.data$lengd),log(pred.data$lifur))  
+
+pred.data <- list(ar=years,reg=c("N","S"),lengd=le)
+pred.data <- expand.grid(pred.data)
+pred.data$reg <- as.character(pred.data$reg)
+pred.data <- merge(pred.data,torskur.marsrall.wt.all[,c("lengd","reg","oslaegt","slaegt","lifur")])
+pred.data$wt <- rep(0.1,nrow(pred.data)) 
+cn <- names(pred.data)
+
+tmp <- filter.lengdthyngd(kvtorskur,oslaegt=F)
+tmp$wt <- rep(1,nrow(tmp)) #*kvtorskur$rat
+tmp <- rbind(tmp[,cn],pred.data[,cn])
+
+for( ar in years) {
+    print(ar)
+    tmp1 <- tmp[tmp$ar==ar ,]
+    tmp3 <- tmp1
+    x <- gam(slaegt~s(log(lengd),df=7)*factor(reg),data=tmp1,family=Gamma(link=log),weight=tmp1$wt,maxit=100)
+    x1 <- predict(x,se.fit=T,type="response")
+    j <- tmp1$wt < 1
+    tmp1 <- tmp1[j,c("ar","lengd","reg")]
+    tmp1$slaegt <- x$fitted.values[j]
+    tmp1$slaegt.se <- x1$se.fit[j]
+    if(ar==1993)
+        tmp2 <- tmp1
+    else
+        tmp2 <- rbind(tmp2,tmp1)
+}
+tmpsl <- tmp2  
+
+# Óslægt
+cat("oslaegt")
+  
+tmp <- filter.lengdthyngd(kvtorskur,oslaegt=T)
+tmp$wt <- rep(1,nrow(tmp)) #*kvtorskur$rat
+tmp <- rbind(tmp[,cn],pred.data[,cn])
+
+for( ar in years) {
+    print(ar)
+    tmp1 <- tmp[tmp$ar==ar ,]
+    tmp3 <- tmp1
+    x <- gam(oslaegt~s(log(lengd),df=7)*factor(reg),data=tmp1,family=Gamma(link=log),weight=tmp1$wt,maxit=100)
+    x1 <- predict(x,se.fit=T,type="response")
+    j <- tmp1$wt < 1
+    tmp1 <- tmp1[j,c("ar","lengd","reg")]
+    tmp1$oslaegt <- x$fitted.values[j]
+    tmp1$oslaegt.se <- x1$se.fit[j]
+    if(ar==1993)
+        tmp2 <- tmp1
+    else
+        tmp2 <- rbind(tmp2,tmp1)
+}
+tmposl <- tmp2
+
+
+cat("lifur") 
+  
+tmp <- kvtorskur[!is.na(kvtorskur$lifur) & kvtorskur$lifur < 0.2*kvtorskur$oslaegt,]
+i <- tmp$lifur < 0.003*tmp$oslaegt;if(any(i)) tmp$lifur[i] <- tmp$oslaegt[i]*0.003
+tmp <- tmp[tmp$lengd >= 25,] # Marklaust að vera með lifur fyrir minni
+tmp$wt <- rep(1,nrow(tmp)) #*kvtorskur$rat
+tmp <- rbind(tmp[,cn],pred.data[,cn])
+for( ar in years) {
+    print(ar)
+    tmp1 <- tmp[tmp$ar==ar ,]
+    tmp3 <- tmp1
+    x <- gam(lifur~s(log(lengd),df=7)*factor(reg),data=tmp1,family=Gamma(link=log),weight=tmp1$wt,maxit=100)
+    x1 <- predict(x,se.fit=T,type="response")
+    j <- tmp1$wt < 1
+    tmp1 <- tmp1[j,c("ar","lengd","reg")]
+    tmp1$lifur <- x$fitted.values[j]
+    tmp1$lifur.se <- x1$se.fit[j]
+    if(ar==1993)
+        tmp2 <- tmp1
+    else
+        tmp2 <- rbind(tmp2,tmp1)
+}
+tmpli <- tmp2
+
+pred.data <- merge(pred.data[,c("ar","reg","lengd")],tmpsl)
+pred.data <- merge(pred.data,tmposl)
+pred.data <- merge(pred.data,tmpli)
+  
+codmarchsurwt <- pred.data
+
+codmarchsurwt.8592 <- apply.shrink(codmarchsurwt$oslaegt,list(codmarchsurwt$lengd,codmarchsurwt$reg),mean,names=c("lengd","reg","oslaegt"))
+#Lwt relationship finished. 
+
+# ------------------------------------------------------------------------------
+# 2. Age index
+years <- 1985:lastyear
+ 
+
+husky::Rattach(paste(home,"OldStratas",sep=""))
+ind <- c(31931,31932,32131,36731,37031,37131,37132,37231,41431,41531,42231,42232,47431,52331)
+notfixedInd <- c(27401,37212,37302,41214,41412,46211,46212,46214,46216,46311,46312,46313,51301,52413,56214,57412,62311,71912,72314)
+fj  <- list()
+
+stcol <- c("synis.id","lat","lon","oldstrata","newstrata","area","toglengd") # to use in MakeLdistbystation
+regs <- list(S=c(1,9:10),N=2:8)
+regname <- names(regs)
+aldur <- 1:14
+lengd <- c(seq(4.5,109.5,by=5),119.5,139.5)
+
+# Calculate the age indices
+for( i in 1:length(years) ) {
+  print(i) 
+  fj[[i]] <- data.frame()
+  if(i == 17)  stauka <- lesa.stodvar(leidangur="A4-2001")
+  # For each region (South and North)
+  for( j in 1:2) {
+    st <- STODVAR.all[!is.na(match(STODVAR.all$area,regs[[j]])) & (STODVAR.all$tognumer < 20 | !is.na(match(STODVAR.all$index,ind))) & STODVAR.all$ar==years[i] ,]
+    st.all <- STODVAR.all[!is.na(match(STODVAR.all$area,regs[[j]])) & STODVAR.all$ar==years[i],]
+    st <- st[is.na(match(st$index,notfixedInd)),]
+    
+    # If the year is 2001, add cruise A4-2001
+    if(i == 17){
+      cn <- c("lat","lon","synis.id")
+      sttmp <- stauka[stauka$area %in% regs[[j]],cn]
+      st.all <- rbind(st.all[,cn],sttmp[,cn])
+    }
+    
+    le <- lesa.lengdir(st$synis.id,TEG)
+    kv <- lesa.kvarnir(st.all$synis.id,TEG,col.names=c("kyn","kynthroski"),oracle=F)
+    
+    nu <- lesa.numer(st$synis.id,TEG)
+    
+    alk <- MakeAlk(kv, TEG, lengd=lengd, aldur = aldur, FilterAldurLengd = F, kynth = T) # Tók filteraldurlengd af
+    ar <- years[i]
+    if(ar < 1993){ 
+      tmp <- codmarchsurwt.8592[codmarchsurwt.8592$reg==regname[j],]}
+    else {
+      tmp <- codmarchsurwt[codmarchsurwt$reg==regname[j] & codmarchsurwt$ar==ar,]}
+    ldist <- MakeLdistbyStation(le,nu,1,lengd=lengd,Stodvar=st,talid=T,lengd.thyngd.data=tmp,stodvar.col=stcol)
+    fj[[i]]  <- rbind.alk(fj[[i]],Calc.fj.per.station(alk,ldist))
+  }
+}
+
+torskur.fj <- fj
+names(torskur.fj) <- as.character(years)
+
+
+
+# Aggregate statistics
+
+biomass <- kynthbiomass <-  meanlefj <- sdevfj <- kynthfj <- fj <- list()
+biovisit <- fjvisit <- kynthvisit <- meanlevisit <-  sdevvisit <- kynthbiovisit  <- list()
+
+for(i in 1:length(years)) {
+  print(i)
+  st <- attributes(torskur.fj[[i]])$Stodvar
+  fj <- kynthfj <- biomass <- meanlefj <- sdevfj <- kynthbiomass <- list()
+  biom <- torskur.fj[[i]]$WtPerAldur*torskur.fj[[i]]$FjPerAldur
+  biom[is.na(biom)] <- 0
+  kynthbiom <- torskur.fj[[i]]$KynthWtPerAldur*torskur.fj[[i]]$KynthFjPerAldur
+  kynthbiom[is.na(kynthbiom)] <- 0
+  # For each age group
+  for(j in 1:14) {
+    cat(paste(j," "))
+    fj[[j]] <- Calc.index(st,z=torskur.fj[[i]]$FjPerAldur[,j],cn="oldstrata")$aggr.output
+    kynthfj[[j]] <- Calc.index(st,z=torskur.fj[[i]]$KynthFjPerAldur[,j],cn="oldstrata")$aggr.output
+    biomass[[j]] <- Calc.index(st,z=biom[,j],cn="oldstrata")$aggr.output
+    meanlefj[[j]] <- Calc.index(st,z=torskur.fj[[i]]$LengdSinnumFjPerAldur[,j],cn="oldstrata")$aggr.output
+    sdevfj[[j]] <- Calc.index(st,z=torskur.fj[[i]]$Lengd2SinnumFjPerAldur[,j],cn="oldstrata")$aggr.output
+    kynthbiomass[[j]] <- Calc.index(st,z=kynthbiom[,j],cn="oldstrata")$aggr.output
+  }
+  biovisit[[i]] <- biomass
+  fjvisit[[i]] <- fj
+  kynthvisit[[i]] <- kynthfj
+  kynthbiovisit[[i]] <- kynthbiomass
+  sdevvisit[[i]] <- sdevfj
+  meanlevisit[[i]] <- meanlefj
+}
+names(fjvisit) <- names(biovisit) <- names(meanlevisit) <- names(sdevvisit) <-names(kynthvisit) <- names(kynthbiovisit) <-  as.character(years)
+
+
+codindexlistn <- combine.alk.visit(fjvisit, kynthvisit, biovisit,meanlevisit,sdevvisit,kynthbiovisit ,row = 13, aldur = 1:14,ar=years)
+codindexlists <- combine.alk.visit(fjvisit, kynthvisit, biovisit,meanlevisit,sdevvisit,kynthbiovisit,row = c(14), aldur = 1:14,ar=years)
+codindexlistanF  <- combine.alk.visit(fjvisit, kynthvisit, biovisit, meanlevisit,sdevvisit,kynthbiovisit,row = c(22), aldur = 1:14,ar=years)
+
+
+codindexlist <- combine.alk.visit(fjvisit, kynthvisit, biovisit,meanlevisit,sdevvisit,kynthbiovisit ,row = 15, aldur = 1:14,ar=years)
+#torskur.visit.faer  <- combine.alk.visit(fjvisit, kynthvisit, biovisit,meanlevisit,sdevvisit,kynthbiovisit ,row = 7, aldur = 1:14,ar=years)
+
+x <- codindexlist$fj - codindexlistanF$fj
+x <- x[as.character(1994:1995),]
+tmp <- codindexlistanF$fj
+tmp <- tmp[as.character(1994:1995),]
+x1 <- x/(tmp+1e-9)
+faerhrrat9495 <- apply(x1, 2, mean)
+
+
+tmp <- codindexlist$fj
+for(i in 1996:2003)
+        tmp[as.character(i),] <- tmp[as.character(i),] * (1 + faerhrrat9495)
+codindexlist$fj <- tmp
+
+
+
+# Setja saman fyrir ORACLE
+
+age <- 1:14
+year <- years
+n <- length(age)
+age <- matrix(age,n,length(year)) 
+year <- matrix(year,n,length(year),byrow=T)
+yearage <- data.frame(year=c(year),age=c(age))
+
+tmp <- tmp1 <- tmp2 <- tmp3 <-  yearage
+tmp$reg <- "Tot"
+tmp$fj <- c(t(codindexlist$fj))
+tmp$cv <- c(t(codindexlist$cv))
+tmp$wt <- c(t(codindexlist$wt))
+tmp$kynthhlutfall <- c(t(codindexlist$kynthhlutfall))
+tmp$meanle <- c(t(codindexlist$meanle))
+tmp$sdev <- c(t(codindexlist$sdev))
+tmp$kynthwt <- c(t(codindexlist$kynthwt))
+
+tmp1$reg <- "N"
+tmp1$fj <- c(t(codindexlistn$fj))
+tmp1$cv <- c(t(codindexlistn$cv))
+tmp1$wt <- c(t(codindexlistn$wt))
+tmp1$kynthhlutfall <- c(t(codindexlistn$kynthhlutfall))
+tmp1$meanle <- c(t(codindexlistn$meanle))
+tmp1$sdev <- c(t(codindexlistn$sdev))
+tmp1$kynthwt <- c(t(codindexlistn$kynthwt))
+
+tmp2$reg <- "S"
+tmp2$fj <- c(t(codindexlists$fj))
+tmp2$cv <- c(t(codindexlists$cv))
+tmp2$wt <- c(t(codindexlists$wt))
+tmp2$kynthhlutfall <- c(t(codindexlists$kynthhlutfall))
+tmp2$meanle <- c(t(codindexlists$meanle))
+tmp2$sdev <- c(t(codindexlists$sdev))
+tmp2$kynthwt <- c(t(codindexlists$kynthwt))
+
+tmp3$reg <- "TotanFaer"
+tmp3$fj <- c(t(codindexlistanF$fj))
+tmp3$cv <- c(t(codindexlistanF$cv))
+tmp3$wt <- c(t(codindexlistanF$wt))
+tmp3$kynthhlutfall <- c(t(codindexlistanF$kynthhlutfall))
+tmp3$meanle <- c(t(codindexlistanF$meanle))
+tmp3$sdev <- c(t(codindexlistanF$sdev))
+tmp3$kynthwt <- c(t(codindexlistanF$kynthwt))
+
+
+
+
+
+codindextable <- rbind(tmp,tmp1,tmp2,tmp3)
+
+
+codindexlist$fj <- t(round(codindexlist$fj,2))
+codindexlist$cv <- t(round(codindexlist$cv,3))
+codindexlist$kynthhlutfall<- t(round(codindexlist$kynthhlutfall*100,1))
+codindexlist$wt <- t(round(codindexlist$wt*1000))
+codindexlist$kynthwt <- t(round(codindexlist$kynthwt*1000))
+codindexlist$meanle <- t(round(codindexlist$meanle,1))
+codindexlist$sdev <- t(round(codindexlist$sdev,1))
+
+codindextable$fj <- round(codindextable$fj,2)
+codindextable$cv <- round(codindextable$cv,3)
+codindextable$kynthhlutfall<- round(codindextable$kynthhlutfall*100,1)
+codindextable$wt <- round(codindextable$wt*1000)
+codindextable$kynthwt <- round(codindextable$kynthwt*1000)
+codindextable$meanle <- round(codindextable$meanle,1)
+codindextable$sdev <- round(codindextable$sdev,1)
+
+
+#save(list=c("codmarchsurwt","codmarchsurwt.8592","codindextable","codindexlist"),file="codindexold.rdata")
+
+
+```
+
+## Reconstructing the stuff
+
+### The stations used
+
+```{r, eval = FALSE}
+load("/net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/Stations.rdata")
+st <- STODVAR.all[STODVAR.all$ar %in% years,]
+tmp <- lesa.stodvar(leidangur="A4-2001")
+ind <- c(31931,31932,32131,36731,37031,37131,37132,37231,41431,41531,42231,42232,47431,52331)
+notfixedInd <- c(27401,37212,37302,41214,41412,46211,46212,46214,46216,46311,46312,46313,51301,52413,56214,57412,62311,71912,72314)
+```
 

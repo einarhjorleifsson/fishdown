@@ -29,11 +29,12 @@ Note that table contains also variable "area", standing for Bormicon area (in ca
 Getting all stations and add strata (for all townumbers less than 40):
 ```{r}
 st <-
-  lesa_stodvar(con) %>%
-  filter(synaflokkur == 30) %>%
+  les_stod(con) %>%
+  left_join(les_syni(con)) %>% 
+  filter(synaflokkur_nr == 30) %>% 
   #      NOTE: This should be fixed in fiskar.stodvar
   #      2019-02-13 Hoski to double check and then send in a correction to Sigrun
-  mutate(tognumer = ifelse(synis_id == 474396, 1, tognumer),
+  mutate(tognumer = ifelse(synis_id == 474396, 1, tog_nr),
          index = reitur * 100 + tognumer) %>% 
   left_join(index.strata, by = "index")
 ```
@@ -77,6 +78,8 @@ inside_strata <-
 st <-
   st %>% 
   collect(n = Inf) %>% 
+  mutate(lon = kastad_lengd,
+         lat = kastad_breidd) %>% 
   mutate(oldstrata = inside_strata(.,
                                    stratalist = husky::ralllist,
                                    stratas = husky::STRATAS),

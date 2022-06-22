@@ -100,7 +100,7 @@ Calculating stratified survey indices is done in four steps:
 Lets select a species to work with and the length above which we want to obtain
 the standardized survey indices:
 ```{r}
-Species    <- 1                   # Select a species
+Species    <- 6                   # Select a species
 Length.min <- 5                   # Minimum length for indices calculation
 Length.max <- 500                 # Maximum length for indices calculation
 ```
@@ -126,17 +126,18 @@ Tognumer <- c(1:39, NA)
 
 by.length <-  
   # 1. get survey stations -----------------------------------------------------
-  lesa_stodvar(con) %>% 
-  filter(synaflokkur == Synaflokkur) %>% 
-  mutate(index = reitur * 100 + tognumer) %>% 
-  select(synis_id, ar, index, reitur, tognumer, veidarfaeri, toglengd) %>% 
+  les_stod(con) %>% 
+  left_join(les_syni(con)) %>% 
+  filter(synaflokkur_nr == Synaflokkur) %>% 
+  mutate(index = reitur * 100 + tog_nr) %>% 
+  select(synis_id, ar, index, reitur, tognumer = tog_nr, veidarfaeri, toglengd) %>% 
   
   # 2. get length data ---------------------------------------------------------
-  left_join(lesa_lengdir(con) %>% 
-              filter(tegund %in% Species,
+  left_join(les_lengd(con) %>% 
+              filter(tegund_nr %in% Species,
                      lengd >= Length.min,
                      lengd < Length.max) %>% 
-              group_by(synis_id, tegund, lengd) %>% 
+              group_by(synis_id, tegund_nr, lengd) %>% 
               summarise(fjoldi = sum(fjoldi, na.rm = TRUE)),
             by = "synis_id") %>% 
               ungroup() %>% 
@@ -144,17 +145,17 @@ by.length <-
   # 0. A temporary fix, for zero stations --------------------------------------
   #     TODO: Find a more permanent solution so scripts works for more than
   #           one species (via group_by( ..., tegund))
-  mutate(tegund = if_else(is.na(tegund), Species, tegund),
+  mutate(tegund_nr = if_else(is.na(tegund_nr), Species, tegund_nr),
          lengd  = if_else(is.na(lengd), Length.min, lengd),
          fjoldi = if_else(is.na(fjoldi), 0, fjoldi)) %>% 
   
   # 3. get count data ----------------------------------------------------------
-  left_join(lesa_numer(con) %>%
-            dplyr::mutate(r = ifelse(fj_talid==0 | is.na(fj_talid),
+  left_join(les_skala(con) %>%
+            dplyr::mutate(r = ifelse(taldir ==0 | is.na(taldir),
                                      1,
-                                     1 + fj_talid / ifelse(fj_maelt == 0 | is.na(fj_maelt), 1, fj_maelt))) %>%
-            dplyr::select(synis_id, tegund, r),
-            by = c("synis_id", "tegund")) %>% 
+                                     1 + taldir / ifelse(maeldir == 0 | is.na(maeldir), 1, maeldir))) %>%
+            dplyr::select(synis_id, tegund_nr, r),
+            by = c("synis_id", "tegund_nr")) %>% 
   
   # 4. scale by counted --------------------------------------------------------
   mutate(N = r * fjoldi / 1e3) %>%   # units of thousand
@@ -172,8 +173,8 @@ by.length <-
   
   # 7. calculate_biomass from numbers, length and a and b ----------------------
   # 7.a get the length weight coefficients
-  left_join(tbl_mar(con, "ops$einarhj.lwcoeff"),
-            by = "tegund") %>% 
+  left_join(tbl_mar(con, "ops$einarhj.lwcoeff") %>% rename(tegund_nr = tegund),
+            by = "tegund_nr") %>% 
   # 7.b use Newton's law if lwcoefficient for species not specified
   mutate(a = ifelse(is.na(a), 0.01, a),
          b = ifelse(is.na(b), 3.00, b),
@@ -183,8 +184,8 @@ by.length <-
   # 8. Cumulative calculation
   #     Note: This step is a precursor for calculating things via
   #           year, strata, length
-  arrange(tegund, synis_id, lengd) %>% 
-  group_by(tegund, synis_id) %>% 
+  arrange(tegund_nr, synis_id, lengd) %>% 
+  group_by(tegund_nr, synis_id) %>% 
   mutate(cN = cumsum(N),
          cB = sum(B, na.rm = TRUE) - cumsum(B) + B) %>% 
   ungroup()
@@ -200,7 +201,7 @@ by.station <-
   # NOTE: here is the first step where statistics by length is dropped
   #       some (minor) recoding above would be needed if one were to take things
   #       forward by each length class
-  group_by(synis_id, index, reitur, tognumer, veidarfaeri, tegund, ar) %>% 
+  group_by(synis_id, index, reitur, tognumer, veidarfaeri, tegund_nr, ar) %>% 
   summarise(N = sum(N, na.rm = TRUE),
             B = sum(B, na.rm = TRUE)) %>% 
   # Zero stations - THOUGHT THIS STEP SHOULD BE REDUNDANT
@@ -223,7 +224,7 @@ by.strata <-
   left_join(tbl_mar(con, "ops$einarhj.smb_index_strata") %>% 
               select(index, strata = stdoldstrata)) %>% 
   # 10.b group by year and strata and calculate number of stations, mean and sd
-  group_by(tegund, ar, strata) %>% 
+  group_by(tegund_nr, ar, strata) %>% 
   summarise(sN  = n(),   # number of stations within strata
             n_m  = mean(N, na.rm = TRUE),
             n_d  = ifelse(n() == 1, mean(N, na.rm = TRUE) * std.cv, sd(N)),
@@ -260,7 +261,7 @@ by.year <-
   drop_na() %>% 
   
   # 11. summarise by year ------------------------------------------------------
-  group_by(tegund, ar) %>%
+  group_by(tegund_nr, ar) %>%
   summarise(n = sum(n, na.rm = TRUE),
             # A la Höski
             n.cv = calc_cv(n_m, n_d, area, sN),
@@ -289,7 +290,7 @@ by.year %>%
   expand_limits(y = 0) +
   labs(x = NULL, y = NULL,
        title = "Spring survey biomass indices") +
-  facet_wrap(~ tegund, scale = "free_y")
+  facet_wrap(~ tegund_nr, scale = "free_y")
 ```
 
 
@@ -301,13 +302,13 @@ Below a comparison with results based on Pope Husky's code, just as a double che
 attach("/net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/Allaggroldsmbindex.rdata")
 vatican <-
  Allaggroldsmbindex %>%
- filter(species == Species,
+ filter(species %in% Species,
         svaedi == "Heild",
         diurnal == 0,
         fixed == 0) %>%
- select(ar, lengd, b = bio.staerri, b.cv = cv.bio.staerri) %>%
+ select(ar, tegund = species, lengd, b = bio.staerri, b.cv = cv.bio.staerri) %>%
  mutate(source = "Vatican") %>%
- as_tibble()
+ as_tibble() 
 vatican <-
   vatican %>% 
   filter(lengd == max(min(lengd), Length.min))
@@ -316,7 +317,7 @@ detach("file:/net/hafkaldi/export/u2/reikn/R/SurveyWork/SMB/Allaggroldsmbindex.r
 by.year %>% 
   mutate(source = "tidy",
          ar = ar + 3/12) %>% 
-  bind_rows(vatican) %>% 
+  bind_rows(vatican %>% rename(tegund_nr = tegund)) %>% 
   ggplot(aes(ar, b, colour = source)) +
   geom_point() +
   geom_pointrange(aes(ymin = b * (1 - b.cv),
@@ -326,8 +327,15 @@ by.year %>%
   expand_limits(y = 0) +
   labs(x = NULL, y = NULL,
        title = "Biomass indices",
-       subtitle = "Comparison of the orthodoxy (Vatican) and tidy")
+       subtitle = "Comparison of the orthodoxy (Vatican) and tidy") +
+  facet_wrap(~ tegund_nr, scale = "free_y")
 ```
 
 Besides that tidy and the Vatican are not operating in the same time zone (one has argued that tidy operates under the Greek-orthodox time zone, but it seems inverse) the stuff on the y-axis looks reasonably similar.
+
+With minor change of the one can 
+
+```{r}
+
+```
 
